@@ -8,6 +8,7 @@ use crate::{
     events::{EventManager, GlobalEvent, SpawnEvent},
     object::GameObject,
     resources::Resources,
+    world::Scene,
 };
 
 pub struct Context<'a> {
@@ -127,13 +128,13 @@ impl<'a> EventApi for Context<'a> {
 }
 
 impl<'a> SceneApi for Context<'a> {
-    fn push_scene<T: crate::prelude::Scene + 'static>(&mut self, scene: T) {
+    fn push_scene<T: Scene + 'static>(&mut self, scene: T) {
         self.event
             .aplication_commands
             .push_back(AppCommands::PushScene(Box::new(scene)));
     }
 
-    fn change_scene<T: crate::prelude::Scene + 'static>(&mut self, scene: T) {
+    fn change_scene<T: Scene + 'static>(&mut self, scene: T) {
         self.event
             .aplication_commands
             .push_back(AppCommands::ChangeScene(Box::new(scene)));
