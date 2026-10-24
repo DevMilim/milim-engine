@@ -1,0 +1,273 @@
+use crate::{
+    core::{EMPTY_BASE, EngineApi},
+    object::{Base, GameObject, GameObjectBase, Pool, Slot},
+};
+
+pub trait GameObjectDispatch {
+    fn is_pending_removal(&self) -> bool {
+        false
+    }
+    fn dispatch_start(&mut self, ctx: &mut impl EngineApi, base: &Base);
+    fn dispatch_update(&mut self, ctx: &mut impl EngineApi, base: &Base, delta: f32);
+    fn dispatch_late_update(&mut self, ctx: &mut impl EngineApi, base: &Base, delta: f32);
+    fn dispatch_fixed_update(&mut self, ctx: &mut impl EngineApi, base: &Base, delta: f32);
+    fn dispatch_events(&mut self, ctx: &mut impl EngineApi);
+    fn dispatch_draw(&mut self, ctx: &mut impl EngineApi, base: &Base, blending: f32);
+    fn dispatch_destroy(&mut self, ctx: &mut impl EngineApi);
+}
+
+impl<T: GameObjectDispatch + GameObject> GameObjectDispatch for Pool<T> {
+    fn dispatch_start(&mut self, ctx: &mut impl EngineApi, base: &Base) {
+        self.items.retain_mut(|obj| {
+            obj.dispatch_start(ctx, base);
+            if obj.is_pending_removal() {
+                obj.dispatch_destroy(ctx);
+                return false;
+            }
+            true
+        });
+    }
+
+    fn dispatch_update(&mut self, ctx: &mut impl EngineApi, base: &Base, delta: f32) {
+        self.items.retain_mut(|obj| {
+            obj.dispatch_update(ctx, base, delta);
+            if obj.is_pending_removal() {
+                obj.dispatch_destroy(ctx);
+                return false;
+            }
+            true
+        });
+    }
+
+    fn dispatch_late_update(&mut self, ctx: &mut impl EngineApi, base: &Base, delta: f32) {
+        self.items.retain_mut(|obj| {
+            obj.dispatch_late_update(ctx, base, delta);
+            if obj.is_pending_removal() {
+                obj.dispatch_destroy(ctx);
+                return false;
+            }
+            true
+        });
+    }
+
+    fn dispatch_fixed_update(&mut self, ctx: &mut impl EngineApi, base: &Base, delta: f32) {
+        self.items.retain_mut(|obj| {
+            obj.dispatch_fixed_update(ctx, base, delta);
+            if obj.is_pending_removal() {
+                obj.dispatch_destroy(ctx);
+                return false;
+            }
+            true
+        });
+    }
+
+    fn dispatch_draw(&mut self, ctx: &mut impl EngineApi, base: &Base, blending: f32) {
+        for obj in self.iter_mut() {
+            obj.dispatch_draw(ctx, base, blending);
+        }
+    }
+
+    fn dispatch_destroy(&mut self, ctx: &mut impl EngineApi) {
+        for obj in self.iter_mut() {
+            obj.dispatch_destroy(ctx);
+        }
+    }
+
+    fn dispatch_events(&mut self, ctx: &mut impl EngineApi) {
+        for obj in self.iter_mut() {
+            obj.dispatch_events(ctx);
+        }
+    }
+}
+
+impl<T: GameObjectDispatch + GameObject, const N: usize> GameObjectDispatch for [T; N] {
+    fn dispatch_start(&mut self, ctx: &mut impl EngineApi, base: &Base) {
+        for obj in self.iter_mut() {
+            obj.dispatch_start(ctx, base);
+        }
+    }
+
+    fn dispatch_update(&mut self, ctx: &mut impl EngineApi, base: &Base, delta: f32) {
+        for obj in self.iter_mut() {
+            obj.dispatch_update(ctx, base, delta);
+        }
+    }
+
+    fn dispatch_late_update(&mut self, ctx: &mut impl EngineApi, base: &Base, delta: f32) {
+        for obj in self.iter_mut() {
+            obj.dispatch_late_update(ctx, base, delta);
+        }
+    }
+
+    fn dispatch_fixed_update(&mut self, ctx: &mut impl EngineApi, base: &Base, delta: f32) {
+        for obj in self.iter_mut() {
+            obj.dispatch_fixed_update(ctx, base, delta);
+        }
+    }
+
+    fn dispatch_draw(&mut self, ctx: &mut impl EngineApi, base: &Base, blending: f32) {
+        for obj in self.iter_mut() {
+            obj.dispatch_draw(ctx, base, blending);
+        }
+    }
+
+    fn dispatch_destroy(&mut self, ctx: &mut impl EngineApi) {
+        for obj in self.iter_mut() {
+            obj.dispatch_destroy(ctx);
+        }
+    }
+
+    fn dispatch_events(&mut self, ctx: &mut impl EngineApi) {
+        for obj in self.iter_mut() {
+            obj.dispatch_events(ctx);
+        }
+    }
+}
+impl<T: GameObjectDispatch + GameObject, const N: usize> GameObject for [T; N] {}
+
+impl<T: GameObjectDispatch + GameObject, const N: usize> GameObjectBase for [T; N] {
+    fn base(&self) -> &Base {
+        &EMPTY_BASE
+    }
+
+    fn base_mut(&mut self) -> &mut Base {
+        panic!("Tentativa invalida de acessar base_mut em um Vec<GameObject>")
+    }
+}
+impl<T: GameObjectDispatch + GameObject> GameObjectDispatch for [T] {
+    fn dispatch_start(&mut self, ctx: &mut impl EngineApi, base: &Base) {
+        for obj in self.iter_mut() {
+            obj.dispatch_start(ctx, base);
+        }
+    }
+
+    fn dispatch_update(&mut self, ctx: &mut impl EngineApi, base: &Base, delta: f32) {
+        for obj in self.iter_mut() {
+            obj.dispatch_update(ctx, base, delta);
+        }
+    }
+
+    fn dispatch_late_update(&mut self, ctx: &mut impl EngineApi, base: &Base, delta: f32) {
+        for obj in self.iter_mut() {
+            obj.dispatch_late_update(ctx, base, delta);
+        }
+    }
+
+    fn dispatch_fixed_update(&mut self, ctx: &mut impl EngineApi, base: &Base, delta: f32) {
+        for obj in self.iter_mut() {
+            obj.dispatch_fixed_update(ctx, base, delta);
+        }
+    }
+
+    fn dispatch_draw(&mut self, ctx: &mut impl EngineApi, base: &Base, blending: f32) {
+        for obj in self.iter_mut() {
+            obj.dispatch_draw(ctx, base, blending);
+        }
+    }
+
+    fn dispatch_destroy(&mut self, ctx: &mut impl EngineApi) {
+        for obj in self.iter_mut() {
+            obj.dispatch_destroy(ctx);
+        }
+    }
+
+    fn dispatch_events(&mut self, ctx: &mut impl EngineApi) {
+        for obj in self.iter_mut() {
+            obj.dispatch_events(ctx);
+        }
+    }
+}
+impl<T: GameObjectDispatch + GameObject> GameObject for [T] {}
+
+impl<T: GameObjectDispatch + GameObject> GameObjectBase for [T] {
+    fn base(&self) -> &Base {
+        &EMPTY_BASE
+    }
+
+    fn base_mut(&mut self) -> &mut Base {
+        panic!("Tentativa invalida de acessar base_mut em um Vec<GameObject>")
+    }
+}
+
+impl<T: GameObjectDispatch + GameObject> GameObjectDispatch for Slot<T> {
+    fn is_pending_removal(&self) -> bool {
+        match &self.inner {
+            Some(obj) => obj.is_pending_removal(),
+            None => false,
+        }
+    }
+    fn dispatch_start(&mut self, ctx: &mut impl EngineApi, base: &Base) {
+        if let Some(obj) = self.inner.as_mut() {
+            obj.dispatch_start(ctx, base);
+            if obj.is_pending_removal() {
+                obj.dispatch_destroy(ctx);
+                self.inner.take();
+            }
+        }
+    }
+
+    fn dispatch_update(&mut self, ctx: &mut impl EngineApi, base: &Base, delta: f32) {
+        if let Some(obj) = self.inner.as_mut() {
+            obj.dispatch_update(ctx, base, delta);
+            if obj.is_pending_removal() {
+                obj.dispatch_destroy(ctx);
+                self.inner.take();
+            }
+        }
+    }
+
+    fn dispatch_late_update(&mut self, ctx: &mut impl EngineApi, base: &Base, delta: f32) {
+        if let Some(obj) = self.inner.as_mut() {
+            obj.dispatch_late_update(ctx, base, delta);
+            if obj.is_pending_removal() {
+                obj.dispatch_destroy(ctx);
+                self.inner.take();
+            }
+        }
+    }
+
+    fn dispatch_fixed_update(&mut self, ctx: &mut impl EngineApi, base: &Base, delta: f32) {
+        if let Some(obj) = self.inner.as_mut() {
+            obj.dispatch_fixed_update(ctx, base, delta);
+            if obj.is_pending_removal() {
+                obj.dispatch_destroy(ctx);
+                self.inner.take();
+            }
+        }
+    }
+
+    fn dispatch_draw(&mut self, ctx: &mut impl EngineApi, base: &Base, blending: f32) {
+        if let Some(obj) = self.inner.as_mut() {
+            obj.dispatch_draw(ctx, base, blending);
+        }
+    }
+
+    fn dispatch_destroy(&mut self, ctx: &mut impl EngineApi) {
+        if let Some(mut obj) = self.inner.take() {
+            obj.dispatch_destroy(ctx);
+        }
+    }
+
+    fn dispatch_events(&mut self, ctx: &mut impl EngineApi) {
+        if let Some(obj) = self.inner.as_mut() {
+            obj.dispatch_events(ctx);
+        }
+    }
+}
+pub struct EmptyGlobals;
+
+impl GameObjectDispatch for EmptyGlobals {
+    fn dispatch_start(&mut self, _ctx: &mut impl EngineApi, _base: &Base) {}
+
+    fn dispatch_update(&mut self, _ctx: &mut impl EngineApi, _base: &Base, _delta: f32) {}
+
+    fn dispatch_late_update(&mut self, _ctx: &mut impl EngineApi, _base: &Base, _delta: f32) {}
+
+    fn dispatch_fixed_update(&mut self, _ctx: &mut impl EngineApi, _base: &Base, _delta: f32) {}
+
+    fn dispatch_events(&mut self, _ctx: &mut impl EngineApi) {}
+
+    fn dispatch_draw(&mut self, _ctx: &mut impl EngineApi, _base: &Base, _blending: f32) {}
+
+    fn dispatch_destroy(&mut self, _ctx: &mut impl EngineApi) {}
+}

@@ -1,0 +1,125 @@
+use crate::{
+    math::{Transform, Vector2},
+    object::Id,
+};
+
+#[derive(Clone)]
+pub struct Base {
+    pub id: Id,
+    pub transform: Transform,
+    pub pending_removal: bool,
+    pub top_level: bool,
+    is_started: bool,
+    pub z_index: i32,
+    destroyed: bool,
+}
+
+impl Base {
+    pub fn new(position: Vector2) -> Self {
+        Self {
+            transform: Transform::new(position.x, position.y),
+            pending_removal: false,
+            top_level: false,
+            id: Id::new(),
+            z_index: 0,
+            is_started: false,
+            destroyed: false,
+        }
+    }
+    pub fn queue_free(&mut self) {
+        self.pending_removal = true;
+    }
+}
+
+impl Default for Base {
+    fn default() -> Self {
+        Base::new(Vector2::ZERO)
+    }
+}
+
+impl GameObjectBase for Base {
+    fn base(&self) -> &Base {
+        self
+    }
+    fn base_mut(&mut self) -> &mut Base {
+        self
+    }
+}
+
+pub trait GameObjectBase {
+    fn base(&self) -> &Base;
+    fn base_mut(&mut self) -> &mut Base;
+
+    fn id(&self) -> Id {
+        self.base().id
+    }
+
+    fn position(&self) -> Vector2 {
+        self.base().transform.position
+    }
+    fn rotation(&self) -> f32 {
+        self.base().transform.rotation
+    }
+    fn scale(&self) -> Vector2 {
+        self.base().transform.scale
+    }
+    fn is_started(&self) -> bool {
+        self.base().is_started
+    }
+    fn is_destroyed(&self) -> bool {
+        self.base().destroyed
+    }
+
+    fn mark_as_started(&mut self) {
+        self.base_mut().is_started = true
+    }
+    fn mark_as_destroyed(&mut self) {
+        let b = self.base_mut();
+        b.destroyed = true;
+        b.pending_removal = true;
+    }
+
+    fn global_position(&self) -> Vector2 {
+        self.base().transform.global_position
+    }
+    fn global_rotation(&self) -> f32 {
+        self.base().transform.global_rotation
+    }
+    fn global_scale(&self) -> Vector2 {
+        self.base().transform.global_scale
+    }
+
+    fn set_position(&mut self, position: Vector2) {
+        self.base_mut().transform.position = position;
+    }
+    fn set_rotation(&mut self, rotation: f32) {
+        self.base_mut().transform.rotation = rotation;
+    }
+    fn set_scale(&mut self, scale: Vector2) {
+        self.base_mut().transform.scale = scale;
+    }
+
+    fn set_global_position(&mut self, position: Vector2) {
+        self.base_mut().transform.global_position = position;
+    }
+    fn set_global_rotation(&mut self, rotation: f32) {
+        self.base_mut().transform.global_rotation = rotation;
+    }
+    fn set_global_scale(&mut self, scale: Vector2) {
+        self.base_mut().transform.global_scale = scale;
+    }
+
+    fn top_level(&mut self) {
+        self.base_mut().top_level = true
+    }
+
+    fn queue_free(&mut self) {
+        self.base_mut().pending_removal = true;
+    }
+    fn z_index(&self) -> i32 {
+        self.base().z_index
+    }
+    fn set_z_index(&mut self, z_index: i32) {
+        self.base_mut().z_index = z_index;
+    }
+}

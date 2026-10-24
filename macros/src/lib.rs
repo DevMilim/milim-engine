@@ -1,0 +1,657 @@
+use darling::{FromDeriveInput, FromField, ast::Data};
+use proc_macro::TokenStream;
+use quote::{quote};
+use syn::{Ident, Path, Token, Type, parse::{Parse, ParseStream}, punctuated::Punctuated};
+
+fn get_crate_name() -> proc_macro2::TokenStream {
+    quote!(milim_engine)
+}
+#[derive(Debug)]
+enum Role { Base, Component(Option<Path>), Object }
+
+#[derive(Debug)]
+struct GameField { ident: Option<Ident>, ty: Type, role: Option<Role> }
+
+impl FromField for GameField {
+    fn from_field(field: &syn::Field) -> darling::Result<Self> {
+        let mut role = None;
+        for attr in &field.attrs {
+            let new = if attr.path().is_ident("base") {
+                Role::Base
+            } else if attr.path().is_ident("component") {
+                let interface = match &attr.meta {
+                    syn::Meta::List(l) => l.parse_args::<ComponentArgs>()
+                        .map_err(darling::Error::from)?.interface,
+                    _ => None,
+                };
+                Role::Component(interface)
+            } else if attr.path().is_ident("object") {
+                Role::Object
+            } else { continue };
+
+            if role.replace(new).is_some() {
+                return Err(darling::Error::custom(
+                    "um campo so pode ter um dos atributos: #[base], #[component] ou #[object]",
+                ).with_span(field));
+            }
+        }
+        Ok(GameField { ident: field.ident.clone(), ty: field.ty.clone(), role })
+    }
+}
+
+#[derive(Debug, FromDeriveInput)]
+#[darling(attributes(game), supports(struct_named))]
+struct GameReceiver {
+    ident: syn::Ident,
+    generics: syn::Generics,
+    data: Data<darling::util::Ignored, GameField>,
+}
+
+#[derive(Debug)]
+struct ComponentArgs {
+    interface: Option<Path>,
+}
+impl Parse for ComponentArgs {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut interface = None;
+
+        while !input.is_empty() {
+            let key: Ident = input.parse()?;
+            let _: Token![=] = input.parse()?;
+
+            match key.to_string().as_str() {
+                "interface" => set_once(&mut interface, input.parse()?, &key)?,
+                _ => {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        format!("chave desconhecida `{key}` em #[component(...)]; use `interface`"),
+                    ));
+                }
+            }
+
+            if input.is_empty() {
+                break;
+            }
+            let _: Token![,] = input.parse()?;
+        }
+        Ok(Self { interface })
+    }
+}
+
+fn set_once<T>(slot: &mut Option<T>, value: T, key: &Ident) -> syn::Result<()> {
+    if slot.replace(value).is_some() {
+        return Err(syn::Error::new(key.span(), format!("`{key}` informado mais de uma vez")));
+    }
+    Ok(())
+}
+#[derive(Debug)]
+struct Subscription {
+    handler: Ident,
+    event_type: Path,
+}
+
+impl Parse for Subscription {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let handler: Ident = input.parse()?;
+        let _: Token![=>] = input.parse()?;
+        let event_type: Path = input.parse()?;
+        Ok(Subscription {
+            handler,
+            event_type,
+        })
+    }
+}
+
+fn parse_event_attributes(
+    attrs: &[syn::Attribute],
+) -> syn::Result<(Vec<Subscription>, Vec<Subscription>)> {
+    let mut subscribe = Vec::new();
+    let mut connect = Vec::new();
+
+    for attr in attrs {
+        if attr.path().is_ident("subscribe") {
+            let parsed =
+                attr.parse_args_with(Punctuated::<Subscription, Token![,]>::parse_terminated)?;
+            subscribe.extend(parsed);
+        } else if attr.path().is_ident("connect") {
+            let parsed =
+                attr.parse_args_with(Punctuated::<Subscription, Token![,]>::parse_terminated)?;
+            connect.extend(parsed);
+        }
+    }
+    check_no_duplicates(&subscribe, "subscribe")?;
+    check_no_duplicates(&connect, "connect")?;
+
+    Ok((subscribe, connect))
+}
+
+fn check_no_duplicates(subs: &[Subscription], attr_name: &str) -> syn::Result<()> {
+    let mut seen = std::collections::HashSet::new();
+    for sub in subs {
+        let ty = &sub.event_type;
+        let key = (sub.handler.to_string(), quote!(#ty).to_string());
+        if !seen.insert(key) {
+            return Err(syn::Error::new_spanned(
+                &sub.handler,
+                format!(
+                    "entrada duplicada em #[{attr_name}(...)] para `{}`",
+                    sub.handler
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn build_downcast_arms(subs: &[Subscription]) -> Vec<proc_macro2::TokenStream> {
+    subs.iter()
+        .map(|sub| {
+            let event_ty = &sub.event_type;
+            let handler_ident = &sub.handler;
+            quote! {
+                if let Some(payload) = any_event.downcast_ref::<#event_ty>() {
+                    self.#handler_ident(ctx, payload);
+                }
+            }
+        })
+        .collect()
+}
+
+#[proc_macro_derive(GameObject, attributes(base, component, object, init, connect, subscribe))]
+pub fn scene_tree(input: TokenStream) -> TokenStream {
+    let crate_name = get_crate_name();
+    let p = quote!(::#crate_name::prelude);
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+
+    let (subscribe, connect) = match parse_event_attributes(&input.attrs) {
+        Ok(v) => v,
+        Err(e) => return e.into_compile_error().into(),
+    };
+
+    let receiver = match GameReceiver::from_derive_input(&input) {
+        Ok(v) => v,
+        Err(e) => return e.write_errors().into(),
+    };
+
+    let subscribe_arms = build_downcast_arms(&subscribe);
+    
+
+    let mut seen_subscribe_types = std::collections::HashSet::new();
+    let subscribe_type_ids: Vec<_> = subscribe
+        .iter()
+        .filter_map(|sub| {
+            let ty = &sub.event_type;
+            let ty_string = quote!(#ty).to_string();
+            seen_subscribe_types
+                .insert(ty_string)
+                .then(|| quote! { ::std::any::TypeId::of::<#ty>() })
+        })
+        .collect();
+    
+    let broadcast_read_block = (!subscribe_type_ids.is_empty())
+        .then(|| {
+            quote! {
+                for &type_id in &[#(#subscribe_type_ids),*] {
+                    let buf = ctx.poll_broadcasts(self.base().id, type_id);
+                    for any_event in &buf {
+                        #(#subscribe_arms)*
+                    }
+                    ctx.recycle_broadcast_buffer(buf);
+                }
+            }
+        })
+        .unwrap_or_default();
+
+    let has_connect = !connect.is_empty();
+    let events_guard = (has_connect || !subscribe_type_ids.is_empty()).then(|| quote! {
+        if self.base().pending_removal {
+            return;
+        }
+    });
+    let event_dispatch_block = has_connect.then(||{
+        let connect_arms = build_downcast_arms(&connect);
+        quote! {
+            if let Some(events) = ctx.take_mailbox(self.base().id){
+                for event in events{
+                    match event{
+                        #p::GlobalEvent::Targeted(_id, any_event) => {
+                            let _ = &any_event;
+                            #(#connect_arms)*
+                        }
+                        #p::GlobalEvent::Broadcast(_) => {}
+                    }
+                }
+            }
+        }
+    });
+
+    let register_subscriptions = (!subscribe_type_ids.is_empty())
+        .then(|| {
+            quote! {
+                ctx.register_subscriptions(self.base().id, &[#(#subscribe_type_ids),*]);
+            }
+        })
+        .unwrap_or_default();
+
+    let unregister_subscriptions = (!subscribe_type_ids.is_empty())
+        .then(|| {
+            quote! {
+                ctx.unregister_subscriptions(self.base().id, &[#(#subscribe_type_ids),*]);
+            }
+        })
+        .unwrap_or_default();
+
+    let struct_name = &receiver.ident;
+    let fields = receiver.data.take_struct().unwrap();
+
+    let mut base_field = None;
+    let mut component_fields = Vec::new();
+    let mut object_fields = Vec::new();
+    let mut bounds = Vec::new();
+    let mut pending_component_impls = Vec::new();
+    let mut seen_interfaces = std::collections::HashSet::new();
+
+    for field in fields.fields {
+        let ident = field.ident.as_ref().unwrap();
+        let ty = &field.ty;
+        match &field.role {
+            Some(Role::Base) => {
+                if base_field.is_some() {
+                    return syn::Error::new_spanned(
+                        ident,
+                        "Apenas um campo pode ser marcado como base",
+                    )
+                    .into_compile_error()
+                    .into();
+                }
+                if !type_is_base(ty) {
+                    return syn::Error::new_spanned(ty, "O campo base precisa ser do tipo Base")
+                        .into_compile_error()
+                        .into();
+                }
+                base_field = Some(ident.clone());
+            }
+
+            Some(Role::Component(interface)) => {
+                component_fields.push(ident.clone());
+                bounds.push(quote! { #ty: #p::Component });
+
+                if let Some(trait_path) = interface {
+                    if !seen_interfaces.insert(quote!(#trait_path).to_string()) {
+                        return syn::Error::new_spanned(
+                            ident,
+                            "A mesma interface de componente só pode ser utilizada uma vez",
+                        )
+                        .into_compile_error()
+                        .into();
+                    }
+                    pending_component_impls.push((ident.clone(), ty.clone(), trait_path.clone()));
+                }
+            }
+
+            Some(Role::Object) => {
+                object_fields.push(ident.clone());
+                bounds.push(quote! { #ty: #p::GameObject + #p::GameObjectDispatch });
+            }
+
+            None => {}
+        }
+    }
+
+    let base_field = match base_field {
+        Some(field) => field,
+        None => {
+            return syn::Error::new_spanned(struct_name, "Nenhum campo foi marcado com #[base]")
+                .into_compile_error()
+                .into();
+        }
+    };
+
+    let apply_transform = quote! {
+        let inherit = !self.#base_field.top_level;
+        self.#base_field.transform.apply_parent(&parent_base.transform, inherit);
+    };
+    
+
+    let (impl_generics, ty_generics, where_clause) = receiver.generics.split_for_impl();
+    let where_tokens = if let Some(wc) = where_clause {
+        quote! { #wc, Self: #p::GameObject, #(#bounds),* }
+    } else {
+        quote! { where Self: #p::GameObject, #(#bounds),* }
+    };
+
+    let injected_methods = pending_component_impls
+        .iter()
+        .map(|(ident, ty, trait_path)| {
+            quote! {
+                impl #p::IComponent<#ty> for #struct_name {
+                    fn get_self(&self) -> & #ty {
+                        &self.#ident
+                    }
+                    fn get_self_mut(&mut self) -> &mut #ty {
+                        &mut self.#ident
+                    }
+                    fn get_self_and_base_mut(&mut self) -> (&mut #ty, &mut #p::Base) {
+                        (&mut self.#ident, &mut self.#base_field)
+                    }
+                }
+                impl #trait_path for #struct_name {}
+            }
+        });
+    let assert_base_type = quote! {
+        const _: () = {
+            #[allow(non_snake_case)]
+            fn __assert_base_field #impl_generics (v: &#struct_name #ty_generics) #where_clause {
+                let _base: &#p::Base = &v.#base_field;
+            }
+        };
+    };
+
+    let guard = quote! {
+        if self.base().pending_removal {
+            self.dispatch_destroy(ctx);
+            return;
+        }
+    };
+    let ensure_started = quote! {
+        #guard
+        if !self.is_started() {
+            self.dispatch_start(ctx, parent_base);
+        } else {
+            #apply_transform
+        }
+    };
+    
+    quote! {
+        #assert_base_type
+        #(#injected_methods)*
+        impl #impl_generics #p::GameObjectBase for #struct_name #ty_generics {
+            fn base(&self) -> &#p::Base {
+                &self.#base_field
+            }
+
+            fn base_mut(&mut self) -> &mut #p::Base {
+                &mut self.#base_field
+            }
+        }
+
+        impl #impl_generics #p::GameObjectDispatch for #struct_name #ty_generics #where_tokens {
+            fn is_pending_removal(&self) -> bool {
+                self.base().pending_removal
+            }
+
+            fn dispatch_start(&mut self, ctx: &mut impl #p::EngineApi, parent_base: &#p::Base) {
+                if self.is_started() || self.base().pending_removal {
+                    return;
+                }
+                #apply_transform
+                ctx.register_alive(self.base().id);
+                #register_subscriptions
+                #(self.#component_fields.start(ctx, &mut self.#base_field);)*
+                self.start(ctx);
+                #(self.#object_fields.dispatch_start(ctx, &self.#base_field);)*
+                self.mark_as_started();
+            }
+
+            #[allow(unused_variables)]
+            fn dispatch_events(&mut self, ctx: &mut impl #p::EngineApi) {
+                #events_guard
+                #event_dispatch_block
+                #broadcast_read_block
+                #(self.#object_fields.dispatch_events(ctx);)*
+            }
+
+            fn dispatch_update(&mut self, ctx: &mut impl #p::EngineApi, parent_base: &#p::Base, delta: f32) {
+                #ensure_started
+                #(self.#component_fields.update(ctx, &mut self.#base_field, delta);)*
+                self.update(ctx, delta);
+                #(self.#object_fields.dispatch_update(ctx, &self.#base_field, delta);)*
+            }
+
+            fn dispatch_late_update(&mut self, ctx: &mut impl #p::EngineApi, parent_base: &#p::Base, delta: f32) {
+                #ensure_started
+                #(self.#component_fields.late_update(ctx, &mut self.#base_field, delta);)*
+                self.late_update(ctx, delta);
+                #(self.#object_fields.dispatch_late_update(ctx, &self.#base_field, delta);)*
+            }
+
+            fn dispatch_fixed_update(&mut self, ctx: &mut impl #p::EngineApi, parent_base: &#p::Base, delta: f32) {
+                #ensure_started
+                #(self.#component_fields.fixed_update(ctx, &mut self.#base_field, delta);)*
+                self.fixed_update(ctx, delta);
+                #(self.#object_fields.dispatch_fixed_update(ctx, &self.#base_field, delta);)*
+            }
+
+            fn dispatch_draw(&mut self, renderer: &mut impl #p::EngineApi, parent_base: &#p::Base, blending: f32) {
+                if self.base().pending_removal { return; }
+                #apply_transform
+                self.draw(renderer, blending);
+                #(self.#component_fields.draw(renderer, &self.#base_field, blending);)*
+                #(self.#object_fields.dispatch_draw(renderer, &self.#base_field, blending);)*
+            }
+
+            fn dispatch_destroy(&mut self, ctx: &mut impl #p::EngineApi) {
+                if self.is_destroyed() {
+                    return;
+                }
+                self.mark_as_destroyed();
+                if !self.is_started() {
+                    return;
+                }
+                #(self.#object_fields.dispatch_destroy(ctx);)*
+                self.destroy(ctx);
+                #(self.#component_fields.destroy(ctx, &self.#base_field);)*
+                #unregister_subscriptions
+                
+                ctx.destroy(self.base().id);
+            }
+        }
+    }
+    .into()
+}
+
+fn type_is_base(ty: &Type) -> bool {
+    if let Type::Path(type_path) = ty
+        && let Some(seg) = type_path.path.segments.last()
+    {
+        return seg.ident == "Base";
+    }
+
+    false
+}
+
+fn gen_dispatch_method(
+    variants: &[&Ident],
+    name: &str,
+    self_call: Option<proc_macro2::TokenStream>,
+    sig: proc_macro2::TokenStream,
+    ret: proc_macro2::TokenStream,
+    call_args: proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    let method = Ident::new(name, proc_macro2::Span::call_site());
+    quote! {
+        fn #method(#sig) #ret {
+            #self_call
+            match self {
+                #(Self::#variants(inner) => inner.#method(#call_args),)*
+            }
+        }
+    }
+}
+
+fn derive_object_dispatch_enum(
+    input: &syn::DeriveInput,
+    include_self_calls: bool,
+) -> Result<proc_macro2::TokenStream, TokenStream> {
+    let crate_name = get_crate_name();
+    let p = quote!(::#crate_name::prelude);
+    let name = &input.ident;
+
+    let data = match &input.data {
+        syn::Data::Enum(d) => d,
+        _ => {
+            return Err(
+                syn::Error::new_spanned(name, "Só pode ser utilizado em enums")
+                    .into_compile_error()
+                    .into(),
+            );
+        }
+    };
+
+    let mut variant_idents = Vec::new();
+    let mut variant_types = Vec::new();
+
+    for variant in &data.variants {
+        variant_idents.push(&variant.ident);
+        match &variant.fields {
+            syn::Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
+                variant_types.push(&fields.unnamed.first().unwrap().ty);
+            }
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    variant,
+                    "Cada variante deve possuir exatamente um campo não nomeado. Ex: Potion(Potion)"
+                ).into_compile_error().into());
+            }
+        }
+    }
+
+    let mut seen_types = std::collections::HashSet::new();
+    let mut from_impls = Vec::new();
+
+    for (ident, ty) in variant_idents.iter().zip(variant_types.iter()) {
+        let ty_string = quote! {#ty}.to_string();
+        if seen_types.insert(ty_string) {
+            from_impls.push(quote! {
+                impl From<#ty> for #name {
+                    fn from(obj: #ty) -> Self {
+                        Self::#ident(obj)
+                    }
+                }
+            });
+        }
+    }
+
+    let v = &variant_idents;
+
+    let dispatch_methods: Vec<_> = [
+        (
+            "dispatch_start",
+            include_self_calls.then(|| quote!(self.start(ctx);)),
+            quote!(&mut self, ctx: &mut impl #p::EngineApi, parent_base: &#p::Base),
+            quote!(),
+            quote!(ctx, parent_base),
+        ),
+        (
+            "dispatch_events",
+            None,
+            quote!(&mut self, ctx: &mut impl #p::EngineApi),
+            quote!(),
+            quote!(ctx),
+        ),
+        (
+            "dispatch_update",
+            include_self_calls.then(|| quote!(self.update(ctx, delta);)),
+            quote!(&mut self, ctx: &mut impl #p::EngineApi, parent_base: &#p::Base, delta: f32),
+            quote!(),
+            quote!(ctx, parent_base, delta),
+        ),
+        (
+            "dispatch_late_update",
+            include_self_calls.then(|| quote!(self.late_update(ctx, delta);)),
+            quote!(&mut self, ctx: &mut impl #p::EngineApi, parent_base: &#p::Base, delta: f32),
+            quote!(),
+            quote!(ctx, parent_base, delta),
+        ),
+        (
+            "dispatch_fixed_update",
+            include_self_calls.then(|| quote!(self.fixed_update(ctx, delta);)),
+            quote!(&mut self, ctx: &mut impl #p::EngineApi, parent_base: &#p::Base, delta: f32),
+            quote!(),
+            quote!(ctx, parent_base, delta),
+        ),
+        (
+            "dispatch_draw",
+            include_self_calls.then(|| quote!(self.draw(renderer, blending);)),
+            quote!(&mut self, renderer: &mut impl #p::EngineApi, parent_base: &#p::Base, blending: f32),
+            quote!(),
+            quote!(renderer, parent_base, blending),
+        ),
+        (
+            "dispatch_destroy",
+            include_self_calls.then(|| quote!(self.destroy(ctx);)),
+            quote!(&mut self, ctx: &mut impl #p::EngineApi),
+            quote!(),
+            quote!(ctx),
+        ),
+        (
+            "is_pending_removal",
+            None,
+            quote!(&self),
+            quote!(-> bool),
+            quote!(),
+        ),
+    ]
+    .into_iter()
+    .map(|(name, self_call, sig, ret, args)| gen_dispatch_method(v, name, self_call, sig, ret, args))
+    .collect();
+
+    let base_methods: Vec<_> = [
+        ("base", quote!(&self), quote!(-> &#p::Base), quote!()),
+        (
+            "base_mut",
+            quote!(&mut self),
+            quote!(-> &mut #p::Base),
+            quote!(),
+        ),
+    ]
+    .into_iter()
+    .map(|(name, sig, ret, args)| gen_dispatch_method(v, name, None, sig, ret, args))
+    .collect();
+
+    Ok(quote! {
+        impl #p::GameObjectDispatch for #name {
+            #(#dispatch_methods)*
+        }
+        impl #p::GameObjectBase for #name {
+            #(#base_methods)*
+        }
+
+        #(#from_impls)*
+    })
+}
+
+#[proc_macro_derive(ObjectEnum)]
+pub fn object_enum_derive(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    match derive_object_dispatch_enum(&input, true) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err,
+    }
+}
+
+#[proc_macro_derive(Scene)]
+pub fn scene_dispatch_derive(input: TokenStream) -> TokenStream {
+    let crate_name = get_crate_name();
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    let name = &input.ident;
+
+    let dispatch_impl = match derive_object_dispatch_enum(&input, false) {
+        Ok(tokens) => tokens,
+        Err(err) => return err,
+    };
+
+    let scene_impl = quote! {
+        impl ::#crate_name::prelude::Scene for #name {
+            fn get_dispatch(&mut self) -> &mut impl ::#crate_name::prelude::GameObjectDispatch {
+                self
+            }
+        }
+    };
+
+    quote! {
+        #dispatch_impl
+        #scene_impl
+    }
+    .into()
+}

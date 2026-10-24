@@ -1,0 +1,12 @@
+[package]
+name = "milim-engine"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+macros = { version = "0.2.0", path = "macros" }
+rustc-hash = "2.1.3"
+uuid = { version = "1.29.0", features = ["v7"] }
+
+[workspace]
+members = ["macros"]
