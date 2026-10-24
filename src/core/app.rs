@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use crate::{
-    core::{Base, Context, CoreSystems, Runner},
+    core::{AppBuilder, Base, Context, CoreSystems, Runner},
     events::EventManager,
     math::Vector2,
     object::{EmptyGlobals, GameObjectDispatch},
@@ -22,7 +22,7 @@ pub struct App<S: Scene + 'static, P: GameObjectDispatch = EmptyGlobals> {
     pub systems: CoreSystems,
     pub events: EventManager,
     pub world: WorldState<S, P>,
-    pub state: Resources,
+    pub resources: Resources,
 
     pub base: Base,
     pub camera_position: Vector2,
@@ -37,7 +37,7 @@ impl<S: Scene + 'static, P: GameObjectDispatch> App<S, P> {
             systems: CoreSystems::default(),
             events: EventManager::default(),
             world: WorldState::new(root_scene),
-            state: Resources::new(),
+            resources: Resources::new(),
             base: Base::default(),
             camera_position: Vector2::new(0.0, 0.0),
             update_frame_count: 0,
@@ -51,7 +51,7 @@ impl<S: Scene + 'static, P: GameObjectDispatch> App<S, P> {
         self
     }
     pub fn add_plugin(mut self, mut plugin: impl Plugin) -> Self {
-        plugin.build(&mut ());
+        plugin.build(&mut AppBuilder::new(&mut self.resources, &mut self.plugins));
         self.plugins.add_plugin(plugin);
         self
     }
@@ -65,7 +65,7 @@ impl<S: Scene + 'static, P: GameObjectDispatch> App<S, P> {
     pub fn run_step(&mut self, delta: f32) -> bool {
         self.update_frame_count += 1;
 
-        let mut ctx = Context::new(&mut self.systems, &mut self.state, &mut self.events);
+        let mut ctx = Context::new(&mut self.systems, &mut self.resources, &mut self.events);
 
         let blending = self.world.update(
             &mut ctx,
@@ -144,7 +144,7 @@ impl<S: Scene + 'static, P: GameObjectDispatch> App<S, P> {
         self.world.is_running
     }
     pub fn shutdown(&mut self) {
-        let mut ctx = Context::new(&mut self.systems, &mut self.state, &mut self.events);
+        let mut ctx = Context::new(&mut self.systems, &mut self.resources, &mut self.events);
         self.world.clear_scenes(&mut ctx);
         if let Some(g) = &mut self.world.global {
             g.dispatch_destroy(&mut ctx);

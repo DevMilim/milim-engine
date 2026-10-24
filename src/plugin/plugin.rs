@@ -2,10 +2,10 @@ use std::any::{Any, TypeId};
 
 use rustc_hash::FxHashSet;
 
-use crate::core::Context;
+use crate::core::{AppBuilder, Context};
 
 pub trait Plugin: Any + 'static {
-    fn build(&mut self, _app: &mut ()) {}
+    fn build(&mut self, _app: &mut AppBuilder) {}
     fn pre_fixed_update(&mut self, _ctx: &mut Context, _delta: f32) {}
     fn post_fixed_update(&mut self, _ctx: &mut Context, _delta: f32) {}
     fn pre_update(&mut self, _ctx: &mut Context, _delta: f32) {}
