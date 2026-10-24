@@ -55,6 +55,12 @@ impl<S: Scene + 'static, P: GameObjectDispatch> App<S, P> {
         self.plugins.add_plugin(plugin);
         self
     }
+    pub fn get_plugin<T: Plugin + 'static>(&self) -> Option<&T> {
+        self.plugins.get_plugin()
+    }
+    pub fn get_plugin_mut<T: Plugin + 'static>(&mut self) -> Option<&mut T> {
+        self.plugins.get_plugin_mut()
+    }
 
     pub fn run_step(&mut self, delta: f32) -> bool {
         self.update_frame_count += 1;
