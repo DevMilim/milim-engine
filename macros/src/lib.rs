@@ -4,8 +4,16 @@ use quote::{quote};
 use syn::{Ident, Path, Token, Type, parse::{Parse, ParseStream}, punctuated::Punctuated};
 
 fn get_crate_name() -> proc_macro2::TokenStream {
-    quote!(milim_engine)
+    use proc_macro_crate::{crate_name, FoundCrate};
+    match crate_name("milim_engine") {
+        Ok(FoundCrate::Name(n)) => {
+            let id = quote::format_ident!("{}", n);
+            quote!(#id)
+        }
+        _ => quote!(milim_engine),
+    }
 }
+
 #[derive(Debug)]
 enum Role { Base, Component(Option<Path>), Object }
 

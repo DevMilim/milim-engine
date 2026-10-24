@@ -6,6 +6,7 @@ license = "MIT"
 
 [dependencies]
 darling = "0.24.1"
+proc-macro-crate = "3.5.0"
 proc-macro2 = "1.0.107"
 quote = "1.0.47"
 syn = { version = "3", features = ["full"] }
