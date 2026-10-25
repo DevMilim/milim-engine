@@ -69,6 +69,9 @@ impl<S: Scene + 'static, P: GameObjectDispatch> App<S, P> {
     pub fn get_resource<T: 'static>(&self) -> Option<&T> {
         self.resources.get::<T>()
     }
+    pub fn require_mut<T: 'static>(&mut self) -> &mut T {
+        self.resources.require_mut::<T>()
+    }
 
     pub fn get_resource_mut<T: 'static>(&mut self) -> Option<&mut T> {
         self.resources.get_mut::<T>()

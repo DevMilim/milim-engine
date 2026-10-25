@@ -46,6 +46,13 @@ impl Resources {
             .get_mut(&TypeId::of::<T>())
             .and_then(|boxed| boxed.resource.downcast_mut())
     }
+    pub fn require_mut<T: 'static>(&mut self) -> &mut T {
+        if let Some(res) = self.get_mut::<T>() {
+            return res;
+        } else {
+            panic!("Engine Error: Required resource not found")
+        }
+    }
 
     pub fn remove<T: 'static>(&mut self) -> Option<T> {
         let type_id = TypeId::of::<T>();
