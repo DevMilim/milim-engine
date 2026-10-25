@@ -1,4 +1,5 @@
 use milim_engine::prelude::*;
+use sdl2_plugin::{DrawQueue, Sdl2Plugin, Sdl2Runner};
 
 #[derive(GameObject)]
 pub struct Counter {
@@ -17,24 +18,16 @@ impl Counter {
 }
 
 impl GameObject for Counter {
-    fn start(&mut self, _ctx: &mut impl EngineApi) {
-        println!("Counter iniciado");
-    }
-
-    fn update(&mut self, _ctx: &mut impl EngineApi, delta: f32) {
-        self.value += 1;
-
-        println!("Atualização: value={}, delta={delta}", self.value);
-        if self.value == 5 {
-            self.queue_free();
-        }
-    }
-    fn fixed_update(&mut self, _ctx: &mut impl EngineApi, delta: f32) {
-        println!("Atualização Fixa: value={}, delta={delta}", self.value);
-    }
-    fn destroy(&mut self, ctx: &mut impl EngineApi) {
-        println!("Destroy");
-        ctx.change_scene(MainScene::Main(Counter::new()));
+    fn draw(&mut self, renderer: &mut impl EngineApi, _blending: f32) {
+        let Some(queue) = renderer.get_resource_mut::<DrawQueue>() else {
+            return;
+        };
+        queue.draw_rect(
+            Vector2::new(400.0, 300.0),
+            Vector2::new(32.0, 32.0),
+            Color::BLUE,
+            0,
+        );
     }
 }
 
@@ -42,47 +35,15 @@ impl GameObject for Counter {
 pub enum MainScene {
     Main(Counter),
 }
-pub struct HeadlessRunner {
-    pub dt: f32,
-    pub max_steps: Option<u64>,
-}
-
-impl HeadlessRunner {
-    pub fn new() -> Self {
-        Self {
-            dt: 0.01,
-            max_steps: Some(20),
-        }
-    }
-}
-
-impl Runner for HeadlessRunner {
-    fn run<S: Scene + 'static, P: GameObjectDispatch>(self, mut app: App<S, P>) -> Result<(), ()> {
-        let mut n = 0u64;
-        while app.run_step(self.dt) {
-            n += 1;
-            if self.max_steps == Some(n) {
-                break;
-            }
-        }
-        app.shutdown();
-        Ok(())
-    }
-}
-
-pub struct Log;
-
-impl Plugin for Log {
-    fn pre_update(&mut self, _ctx: &mut Context, _delta: f32) {
-        println!("Log");
-    }
-    fn shutdown(&mut self, _ctx: &mut Context) {
-        println!("shutdown")
-    }
-}
-
 fn main() {
     let _ = App::<MainScene>::new(Counter::new().into())
-        .add_plugin(Log)
-        .run(HeadlessRunner::new());
+        .add_plugin(Sdl2Plugin)
+        .run(Sdl2Runner {
+            title: "Hello".to_string(),
+            width: 800,
+            height: 600,
+            scale: 1,
+            vsync: true,
+            quit_on_escape: true,
+        });
 }

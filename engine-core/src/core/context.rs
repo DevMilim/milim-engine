@@ -13,19 +13,19 @@ use crate::{
 
 pub struct Context<'a> {
     pub(crate) system: &'a mut CoreSystems,
-    pub(crate) state: &'a mut Resources,
+    pub(crate) resources: &'a mut Resources,
     pub(crate) event: &'a mut EventManager,
 }
 
 impl<'a> Context<'a> {
     pub fn new(
         system: &'a mut CoreSystems,
-        state: &'a mut Resources,
+        resources: &'a mut Resources,
         event: &'a mut EventManager,
     ) -> Self {
         Self {
             system,
-            state,
+            resources,
             event,
         }
     }
@@ -61,19 +61,28 @@ impl<'a> CoreApi for Context<'a> {
     }
 
     fn set_resource<T: 'static>(&mut self, value: T) {
-        self.state.set::<T>(value);
+        self.resources.set::<T>(value, false);
     }
 
     fn get_resource<T: 'static>(&self) -> Option<&T> {
-        self.state.get::<T>()
+        self.resources.get::<T>()
+    }
+
+    fn get2_resources_mut<T1: 'static, T2: 'static>(&mut self) -> Option<(&mut T1, &mut T2)> {
+        self.resources.get2_mut::<T1, T2>()
+    }
+    fn get3_resources_mut<T1: 'static, T2: 'static, T3: 'static>(
+        &mut self,
+    ) -> Option<(&mut T1, &mut T2, &mut T3)> {
+        self.resources.get3_mut::<T1, T2, T3>()
     }
 
     fn get_resource_mut<T: 'static>(&mut self) -> Option<&mut T> {
-        self.state.get_mut::<T>()
+        self.resources.get_mut::<T>()
     }
 
     fn remove_resource<T: 'static>(&mut self) {
-        self.state.remove::<T>();
+        self.resources.remove::<T>();
     }
 }
 impl<'a> EventApi for Context<'a> {

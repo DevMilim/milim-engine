@@ -14,15 +14,24 @@ impl<'a> AppBuilder<'a> {
     }
 
     pub fn init_resource<T: Default + 'static>(&mut self) {
-        self.resources.set(T::default());
+        self.resources.set(T::default(), true);
     }
 
     pub fn set_resource<T: 'static>(&mut self, value: T) {
-        self.resources.set(value);
+        self.resources.set(value, true);
     }
 
     pub fn get_resource<T: 'static>(&self) -> Option<&T> {
         self.resources.get::<T>()
+    }
+
+    pub fn get2_resources_mut<T1: 'static, T2: 'static>(&mut self) -> Option<(&mut T1, &mut T2)> {
+        self.resources.get2_mut::<T1, T2>()
+    }
+    pub fn get3_resources_mut<T1: 'static, T2: 'static, T3: 'static>(
+        &mut self,
+    ) -> Option<(&mut T1, &mut T2, &mut T3)> {
+        self.resources.get3_mut::<T1, T2, T3>()
     }
 
     pub fn get_resource_mut<T: 'static>(&mut self) -> Option<&mut T> {

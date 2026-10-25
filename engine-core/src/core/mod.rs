@@ -1,14 +1,18 @@
 mod api;
 mod app;
 mod app_builder;
+mod cache;
 mod context;
+mod handler;
 mod runner;
 
 pub use api::*;
 pub use app::*;
 pub use app_builder::*;
+pub use cache::*;
 pub use context::*;
 pub use core::*;
+pub use handler::*;
 pub use runner::*;
 
 use rustc_hash::{FxHashMap, FxHashSet};
