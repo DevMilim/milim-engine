@@ -67,7 +67,7 @@ impl<'a> CoreApi for Context<'a> {
     fn get_resource<T: 'static>(&self) -> Option<&T> {
         self.resources.get::<T>()
     }
-    fn require_mut<T: 'static>(&mut self) -> &mut T {
+    fn require_resource_mut<T: 'static>(&mut self) -> &mut T {
         self.resources.require_mut::<T>()
     }
 

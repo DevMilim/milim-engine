@@ -17,7 +17,7 @@ pub trait CoreApi {
     fn set_resource<T: 'static>(&mut self, value: T);
     fn get_resource<T: 'static>(&self) -> Option<&T>;
     fn get_resource_mut<T: 'static>(&mut self) -> Option<&mut T>;
-    fn require_mut<T: 'static>(&mut self) -> &mut T;
+    fn require_resource_mut<T: 'static>(&mut self) -> &mut T;
     fn get2_resources_mut<T1: 'static, T2: 'static>(&mut self) -> Option<(&mut T1, &mut T2)>;
     fn get3_resources_mut<T1: 'static, T2: 'static, T3: 'static>(
         &mut self,
