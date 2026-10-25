@@ -95,14 +95,14 @@ fn set_once<T>(slot: &mut Option<T>, value: T, key: &Ident) -> syn::Result<()> {
 #[derive(Debug)]
 struct Subscription {
     handler: Ident,
-    event_type: Path,
+    event_type: Type,
 }
 
 impl Parse for Subscription {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let handler: Ident = input.parse()?;
+        let event_type: Type = input.parse()?;
         let _: Token![=>] = input.parse()?;
-        let event_type: Path = input.parse()?;
+        let handler: Ident = input.parse()?;
         Ok(Subscription {
             handler,
             event_type,
@@ -134,19 +134,27 @@ fn parse_event_attributes(
 }
 
 fn check_no_duplicates(subs: &[Subscription], attr_name: &str) -> syn::Result<()> {
-    let mut seen = std::collections::HashSet::new();
+    let mut seen: std::collections::HashMap<String, &Ident> = std::collections::HashMap::new();
+
     for sub in subs {
         let ty = &sub.event_type;
-        let key = (sub.handler.to_string(), quote!(#ty).to_string());
-        if !seen.insert(key) {
-            return Err(syn::Error::new_spanned(
-                &sub.handler,
+        let key = quote!(#ty).to_string();
+
+        if let Some(first) = seen.get(&key) {
+            let mut err = syn::Error::new_spanned(
+                ty,
                 format!(
-                    "entrada duplicada em #[{attr_name}(...)] para `{}`",
-                    sub.handler
-                ),
+                        "o tipo `{key}` já está associado ao método `{first}` em #[{attr_name}(...)]; \
+                        use apenas um método por tipo",
+                    )
+            );
+            err.combine(syn::Error::new_spanned(
+                *first,
+                "primeira associação feita aqui",
             ));
+            return Err(err);
         }
+        seen.insert(key, &sub.handler);
     }
     Ok(())
 }
@@ -369,6 +377,9 @@ pub fn scene_tree(input: TokenStream) -> TokenStream {
             #apply_transform
         }
     };
+    let register_connect = has_connect
+        .then(|| quote! { ctx.register_connect(self.base().id); })
+        .unwrap_or_default();
     
     quote! {
         #assert_base_type
@@ -393,7 +404,8 @@ pub fn scene_tree(input: TokenStream) -> TokenStream {
                     return;
                 }
                 #apply_transform
-                ctx.register_alive(self.base().id);
+                ctx.start_object(self.base().id);
+                #register_connect
                 #register_subscriptions
                 #(self.#component_fields.start(ctx, &mut self.#base_field);)*
                 self.start(ctx);
@@ -451,7 +463,7 @@ pub fn scene_tree(input: TokenStream) -> TokenStream {
                 #(self.#component_fields.destroy(ctx, &self.#base_field);)*
                 #unregister_subscriptions
                 
-                ctx.destroy(self.base().id);
+                ctx.destroy_object(self.base().id);
             }
         }
     }

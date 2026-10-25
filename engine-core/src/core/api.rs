@@ -27,9 +27,8 @@ pub trait CoreApi {
 
 pub trait WorldApi {
     fn spawn<T: GameObject + Send + 'static>(&mut self, obj: T);
-    fn register_alive(&mut self, id: Id);
-    fn unregister_alive(&mut self, id: Id);
-    fn destroy(&mut self, id: Id);
+    fn start_object(&mut self, id: Id);
+    fn destroy_object(&mut self, id: Id);
 }
 
 pub trait EventApi {
@@ -41,6 +40,7 @@ pub trait EventApi {
     fn take_mailbox(&mut self, id: Id) -> Option<Vec<GlobalEvent>>;
     fn register_subscriptions(&mut self, id: Id, types: &[TypeId]);
     fn unregister_subscriptions(&mut self, id: Id, types: &[TypeId]);
+    fn register_connect(&mut self, id: Id);
     fn poll_broadcasts(
         &mut self,
         id: Id,

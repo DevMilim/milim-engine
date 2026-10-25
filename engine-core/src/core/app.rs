@@ -103,37 +103,7 @@ impl<S: Scene + 'static, P: GameObjectDispatch> App<S, P> {
             delta,
         );
 
-        const MAX_EVENT_ROUNDS: u32 = 10;
-        let mut last_broadcast_version = 0;
-
-        for round in 0..MAX_EVENT_ROUNDS {
-            let mailboxes_pending = !ctx.event.mailboxes.is_empty();
-            let broadcasts_pending = ctx.event.broadcast_version != last_broadcast_version;
-
-            if !mailboxes_pending && !broadcasts_pending {
-                break;
-            }
-            last_broadcast_version = ctx.event.broadcast_version;
-
-            if let Some(global) = &mut self.world.global {
-                global.dispatch_events(&mut ctx);
-            }
-            let Some(scene) = self.world.last_scene() else {
-                break;
-            };
-            scene.dispatch_events(&mut ctx);
-
-            ctx.event.prune_dead_mailboxes(&ctx.system.live_ids);
-
-            let still_pending = !ctx.event.mailboxes.is_empty()
-                || ctx.event.broadcast_version != last_broadcast_version;
-
-            if round == MAX_EVENT_ROUNDS - 1 && still_pending {
-                eprintln!("limite de rounds de evento atingido, possível loop de eventos");
-            }
-        }
-
-        ctx.event.clear_broadcast_log();
+        Self::flush_events(&mut ctx, &mut self.world);
 
         self.world.destroy_pending_top(&mut ctx);
 
@@ -165,15 +135,41 @@ impl<S: Scene + 'static, P: GameObjectDispatch> App<S, P> {
         if self.world.scenes.is_empty() {
             self.world.quit();
         }
+        Self::flush_events(&mut ctx, &mut self.world);
+        ctx.event.end_frame();
         if self.world.is_running {
             self.world
                 .render(&mut ctx, &mut self.plugins, &self.base, blending);
         }
         self.world.is_running
     }
+    fn flush_events(ctx: &mut Context, world: &mut WorldState<S, P>) {
+        const MAX_EVENT_ROUNDS: u32 = 10;
+
+        for round in 0..MAX_EVENT_ROUNDS {
+            if !ctx.event.has_pending() {
+                break;
+            }
+            ctx.event.mark_dispatched();
+
+            if let Some(global) = &mut world.global {
+                global.dispatch_events(ctx);
+            }
+            if let Some(scene) = world.last_scene() {
+                scene.dispatch_events(ctx);
+            }
+
+            ctx.event.prune_dead(&ctx.system.live_ids);
+
+            if round == MAX_EVENT_ROUNDS - 1 && ctx.event.has_pending() {
+                eprintln!("limite de rounds de evento atingido, possível loop de eventos");
+            }
+        }
+    }
     pub fn shutdown(&mut self) {
         let mut ctx = Context::new(&mut self.systems, &mut self.resources, &mut self.events);
         self.world.clear_scenes(&mut ctx);
+        ctx.event.end_frame();
         if let Some(g) = &mut self.world.global {
             g.dispatch_destroy(&mut ctx);
         }

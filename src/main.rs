@@ -2,26 +2,22 @@ use milim_engine::prelude::*;
 use sdl2_plugin::{DrawQueue, Sdl2Plugin, Sdl2Runner};
 
 #[derive(GameObject)]
-pub struct Counter {
+pub struct Main {
     #[base]
     base: Base,
-    value: u32,
 }
 
-impl Counter {
+impl Main {
     fn new() -> Self {
         Self {
             base: Base::default(),
-            value: 0,
         }
     }
 }
 
-impl GameObject for Counter {
+impl GameObject for Main {
     fn draw(&mut self, renderer: &mut impl EngineApi, _blending: f32) {
-        let Some(queue) = renderer.get_resource_mut::<DrawQueue>() else {
-            return;
-        };
+        let queue = renderer.require_resource_mut::<DrawQueue>();
         queue.draw_rect(
             Vector2::new(400.0, 300.0),
             Vector2::new(32.0, 32.0),
@@ -33,10 +29,10 @@ impl GameObject for Counter {
 
 #[derive(Scene)]
 pub enum MainScene {
-    Main(Counter),
+    Main(Main),
 }
 fn main() {
-    let _ = App::<MainScene>::new(Counter::new().into())
+    let _ = App::<MainScene>::new(Main::new().into())
         .add_plugin(Sdl2Plugin)
         .run(Sdl2Runner {
             title: "Hello".to_string(),

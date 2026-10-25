@@ -26,7 +26,8 @@ pub struct EventManager {
 
     pub broadcast_version: u64,
     pub broadcast_scratch_pool: Vec<Vec<Arc<dyn Any + Send + Sync + 'static>>>,
-
+    pub dispatched_version: u64,
+    pub connected: FxHashSet<Id>,
     pub aplication_commands: VecDeque<AppCommands>,
 }
 
@@ -40,11 +41,47 @@ impl Default for EventManager {
             broadcast_version: 0,
             broadcast_scratch_pool: Vec::new(),
             aplication_commands: VecDeque::new(),
+            dispatched_version: 0,
+            connected: FxHashSet::default(),
         }
     }
 }
 
 impl EventManager {
+    pub fn has_pending(&self) -> bool {
+        !self.mailboxes.is_empty() || self.broadcast_version != self.dispatched_version
+    }
+
+    pub fn mark_dispatched(&mut self) {
+        self.dispatched_version = self.broadcast_version;
+    }
+
+    pub fn forget(&mut self, id: Id) {
+        self.mailboxes.remove(&id);
+        self.connected.remove(&id);
+    }
+
+    pub fn end_frame(&mut self) {
+        self.mailboxes.clear();
+        self.clear_broadcast_log();
+        self.dispatched_version = self.broadcast_version;
+    }
+
+    pub fn insert_global_event(&mut self, event: GlobalEvent) {
+        match event {
+            GlobalEvent::Broadcast(payload) => self.insert_broadcast_event(payload),
+            GlobalEvent::Targeted(id, payload) => {
+                if !self.connected.contains(&id) {
+                    debug_assert!(false, "evento Targeted para id sem #[connect]");
+                    return;
+                }
+                self.mailboxes
+                    .entry(id)
+                    .or_default()
+                    .push(GlobalEvent::Targeted(id, payload));
+            }
+        }
+    }
     pub fn take_mailbox(&mut self, id: Id) -> Option<Vec<GlobalEvent>> {
         self.mailboxes.remove(&id)
     }
@@ -55,6 +92,13 @@ impl EventManager {
         }
     }
 
+    pub fn prune_dead(&mut self, live_ids: &FxHashSet<Id>) {
+        self.mailboxes.retain(|id, _| live_ids.contains(id));
+        self.connected.retain(|id| live_ids.contains(id));
+        self.broadcast_cursors
+            .retain(|(id, _), _| live_ids.contains(id));
+    }
+
     pub fn unregister_subscriptions(&mut self, id: Id, types: &[TypeId]) {
         for &type_id in types {
             if let Some(ids) = self.subscribers.get_mut(&type_id) {
@@ -63,9 +107,8 @@ impl EventManager {
                     self.subscribers.remove(&type_id);
                 }
             }
+            self.broadcast_cursors.remove(&(id, type_id));
         }
-        self.broadcast_cursors
-            .retain(|&(cursor_id, _), _| cursor_id != id);
     }
 
     pub fn poll_broadcasts(
@@ -95,18 +138,6 @@ impl EventManager {
         self.broadcast_scratch_pool.push(buf);
     }
 
-    pub fn insert_global_event(&mut self, event: GlobalEvent) {
-        match event {
-            GlobalEvent::Broadcast(payload) => self.insert_broadcast_event(payload),
-            GlobalEvent::Targeted(id, payload) => {
-                self.mailboxes
-                    .entry(id)
-                    .or_default()
-                    .push(GlobalEvent::Targeted(id, payload));
-            }
-        }
-    }
-
     pub fn insert_broadcast_event(&mut self, event: Arc<dyn Any + Send + Sync + 'static>) {
         let type_id = (*event).type_id();
 
@@ -116,10 +147,6 @@ impl EventManager {
 
         self.broadcasts.entry(type_id).or_default().push(event);
         self.broadcast_version = self.broadcast_version.wrapping_add(1);
-    }
-
-    pub fn prune_dead_mailboxes(&mut self, live_ids: &FxHashSet<Id>) {
-        self.mailboxes.retain(|id, _| live_ids.contains(id));
     }
 
     pub fn clear_broadcast_log(&mut self) {
@@ -132,16 +159,16 @@ impl EventManager {
 /// Exemplo:
 /// ```
 /// #[derive(GameObject)]
-/// #[game(subscribe(spawn_bullet: SpawnEvent<Bullet>))]
+/// #[game(subscribe(SpawnEvent<Bullet> => spawn_bullet))]
 /// pub struct MainScene {
 ///     #[base]
 ///     base: Base,
 ///     #[object]
-///     bullets: Vec<Bullet>,
+///     bullets: Pool<Bullet>,
 /// }
 /// impl MainScene {
 ///     fn spawn_bullet(&mut self, _ctx: &mut impl EngineApi, event: &SpawnEvent<Bullet>) {
-///         self.bullets.push(event.take().expect("Erro ao spawnar bullet"));
+///         self.bullets.spawn(event.take().expect("Erro ao spawnar bullet"));
 ///     }
 /// }
 ///

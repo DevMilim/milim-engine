@@ -37,14 +37,12 @@ impl<'a> WorldApi for Context<'a> {
     fn spawn<T: GameObject + Send + 'static>(&mut self, obj: T) {
         self.emit(SpawnEvent::new(obj));
     }
-    fn register_alive(&mut self, id: Id) {
+    fn start_object(&mut self, id: Id) {
         self.system.live_ids.insert(id);
     }
-    fn unregister_alive(&mut self, id: Id) {
+    fn destroy_object(&mut self, id: Id) {
+        self.event.forget(id);
         self.system.live_ids.remove(&id);
-    }
-    fn destroy(&mut self, id: Id) {
-        self.unregister_alive(id);
     }
 }
 impl<'a> CoreApi for Context<'a> {
@@ -136,6 +134,10 @@ impl<'a> EventApi for Context<'a> {
     }
     fn recycle_broadcast_buffer(&mut self, buf: Vec<Arc<dyn Any + Send + Sync + 'static>>) {
         self.event.recycle_broadcast_buffer(buf);
+    }
+
+    fn register_connect(&mut self, id: Id) {
+        self.event.connected.insert(id);
     }
 }
 
