@@ -403,6 +403,7 @@ pub fn scene_tree(input: TokenStream) -> TokenStream {
                 if self.is_started() || self.base().pending_removal {
                     return;
                 }
+                self.#base_field.parent = Some(parent_base.id);
                 #apply_transform
                 ctx.start_object(self.base().id);
                 #register_connect

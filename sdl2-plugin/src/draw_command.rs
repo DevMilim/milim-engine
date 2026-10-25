@@ -4,6 +4,8 @@ use engine_core::{
 };
 use sdl2::render::Texture;
 
+use crate::Sdl2Context;
+
 #[derive(Debug)]
 pub enum DrawCommandType {
     Sprite,
@@ -46,4 +48,13 @@ impl Default for DrawData {
             flip_v: false,
         }
     }
+}
+pub fn load_image(sdl2_context: Sdl2Context, path: &str) -> Texture {
+    use sdl2::image::LoadTexture;
+
+    let texture = sdl2_context
+        .texture_creator
+        .load_texture(path)
+        .expect("Falha ao carregar texture");
+    texture
 }

@@ -1,5 +1,26 @@
 use milim_engine::prelude::*;
-use sdl2_plugin::{DrawQueue, Sdl2Plugin, Sdl2Runner};
+use sdl2_plugin::{DrawQueue, Sdl2Plugin, Sdl2Runner, Texture};
+
+pub struct Sprite2D {
+    position: Vector2,
+    path: &'static str,
+    texture: Option<Handler<Texture>>,
+}
+
+impl Component for Sprite2D {
+    fn start(&mut self, ctx: &mut impl EngineApi, _base: &mut Base) {
+        let textures = ctx.require_resource_mut::<AssetCache<Texture>>() else {
+            return;
+        };
+    }
+    fn draw(&mut self, renderer: &mut impl EngineApi, _base: &Base, _blending: f32) {
+        let Some(texture) = self.texture else {
+            return;
+        };
+        let queue = renderer.require_resource_mut::<DrawQueue>();
+        queue.draw_sprite(texture, self.position, 0);
+    }
+}
 
 #[derive(GameObject)]
 pub struct Main {

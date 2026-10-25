@@ -7,9 +7,11 @@ use engine_core::{
 };
 use sdl2::{
     rect::Point,
-    render::{Canvas, Texture, TextureCreator},
+    render::{Canvas, TextureCreator},
     video::{Window, WindowContext},
 };
+
+pub use sdl2::render::Texture;
 
 use crate::{DrawCommand, DrawCommandType, DrawData};
 
