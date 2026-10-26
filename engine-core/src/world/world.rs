@@ -89,6 +89,7 @@ impl<S: Scene, P: GameObjectDispatch> WorldState<S, P> {
         const MAX_FIXED_STEPS: u32 = 5;
         let mut steps = 0;
         while self.accumulator >= FIXED_DT && steps < MAX_FIXED_STEPS {
+            ctx.is_fixed_update = true;
             *fixed_update_count += 1;
             for plugin in plugins.iter_mut() {
                 plugin.pre_fixed_update(ctx, FIXED_DT);
@@ -102,6 +103,7 @@ impl<S: Scene, P: GameObjectDispatch> WorldState<S, P> {
             }
             self.accumulator -= FIXED_DT;
             steps += 1;
+            ctx.is_fixed_update = false;
         }
         if self.accumulator >= FIXED_DT {
             self.accumulator = 0.0;

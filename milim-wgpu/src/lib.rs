@@ -1,14 +1,26 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+use std::sync::Arc;
+
+use engine_core::plugin::Plugin;
+use milim_winit::runner::Window;
+
+enum WgpuState {
+    Uninitialized,
+    Loading,
+    Running(WgpuData),
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+pub struct WgpuData {
+    instance: wgpu::Instance,
+    window: Arc<Window>,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    surface: wgpu::Surface<'static>,
+    config: wgpu::SurfaceConfiguration,
+    render_pipeline: wgpu::RenderPipeline,
 }
+fn spawn(f: impl Future<Output = ()> + 'static) {
+    pollster::block_on(f);
+}
+pub struct WgpuPlugin;
+
+impl Plugin for WgpuPlugin {}

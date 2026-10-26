@@ -97,6 +97,10 @@ impl<S: Scene + 'static, P: GameObjectDispatch> App<S, P> {
 
         let mut ctx = Context::new(&mut self.systems, &mut self.resources, &mut self.events);
 
+        for plugin in self.plugins.iter_mut() {
+            plugin.start_frame(&mut ctx);
+        }
+
         let blending = self.world.update(
             &mut ctx,
             &mut self.plugins,
@@ -142,6 +146,9 @@ impl<S: Scene + 'static, P: GameObjectDispatch> App<S, P> {
         if self.world.is_running {
             self.world
                 .render(&mut ctx, &mut self.plugins, &self.base, blending);
+        }
+        for plugin in self.plugins.iter_mut() {
+            plugin.end_frame(&mut ctx);
         }
         self.world.is_running
     }

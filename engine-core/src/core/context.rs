@@ -15,6 +15,7 @@ pub struct Context<'a> {
     pub(crate) system: &'a mut CoreSystems,
     pub(crate) resources: &'a mut Resources,
     pub(crate) event: &'a mut EventManager,
+    pub(crate) is_fixed_update: bool,
 }
 
 impl<'a> Context<'a> {
@@ -27,6 +28,7 @@ impl<'a> Context<'a> {
             system,
             resources,
             event,
+            is_fixed_update: false,
         }
     }
 }
