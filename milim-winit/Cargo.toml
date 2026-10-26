@@ -1,0 +1,8 @@
+[package]
+name = "milim-winit"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+engine-core = { version = "0.1.0", path = "../engine-core" }
+winit = "0.30.13"
