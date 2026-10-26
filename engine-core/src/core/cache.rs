@@ -1,15 +1,12 @@
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 
-use crate::{core::Handler, object::Id};
+use crate::core::Handler;
 
 pub struct AssetCache<T> {
     assets: FxHashMap<usize, T>,
     path_map: FxHashMap<String, usize>,
     next_id: usize,
-    asset_users: FxHashMap<usize, FxHashSet<Id>>,
     id_to_path: FxHashMap<usize, String>,
-
-    object_assets: FxHashMap<Id, FxHashSet<usize>>,
 }
 
 impl<T> AssetCache<T> {
@@ -18,9 +15,7 @@ impl<T> AssetCache<T> {
             assets: FxHashMap::default(),
             path_map: FxHashMap::default(),
             next_id: 0,
-            asset_users: FxHashMap::default(),
             id_to_path: FxHashMap::default(),
-            object_assets: FxHashMap::default(),
         }
     }
     /// Retorna um id para uso
@@ -42,17 +37,8 @@ impl<T> AssetCache<T> {
         self.assets.get_mut(&id.id)
     }
     /// insere um asset
-    pub fn insert(&mut self, game_object_id: Id, path: &str, asset: T) -> Handler<T> {
+    pub fn insert(&mut self, path: &str, asset: T) -> Handler<T> {
         if let Some(asset_id) = self.path_map.get(path).copied() {
-            self.asset_users
-                .entry(asset_id)
-                .or_default()
-                .insert(game_object_id);
-
-            self.object_assets
-                .entry(game_object_id)
-                .or_default()
-                .insert(asset_id);
             return Handler::new(asset_id);
         }
         let asset_id = self.current_id();
@@ -61,70 +47,19 @@ impl<T> AssetCache<T> {
         self.path_map.insert(path.to_string(), asset_id);
         self.id_to_path.insert(asset_id, path.to_string());
 
-        self.asset_users
-            .entry(asset_id)
-            .or_default()
-            .insert(game_object_id);
-
-        self.object_assets
-            .entry(game_object_id)
-            .or_default()
-            .insert(asset_id);
         Handler::new(asset_id)
     }
     pub fn clear(&mut self) {
         self.assets.clear();
         self.path_map.clear();
-        self.object_assets.clear();
-        self.asset_users.clear();
         self.id_to_path.clear();
     }
-    pub fn remove(&mut self, game_object_id: Id, asset_id: Handler<T>) {
-        let id = asset_id.id;
-
-        let mut object_empty = false;
-        if let Some(assets) = self.object_assets.get_mut(&game_object_id) {
-            assets.remove(&id);
-            object_empty = assets.is_empty();
+    pub fn remove(&mut self, asset_id: Handler<T>) -> Option<T> {
+        let asset = self.assets.remove(&asset_id.id);
+        if let Some(path) = self.id_to_path.remove(&asset_id.id) {
+            self.path_map.remove(&path);
         }
-        if object_empty {
-            self.object_assets.remove(&game_object_id);
-        }
-
-        let should_remove = if let Some(users) = self.asset_users.get_mut(&id) {
-            users.remove(&game_object_id);
-            users.is_empty()
-        } else {
-            false
-        };
-
-        if should_remove {
-            self.asset_users.remove(&id);
-            self.assets.remove(&id);
-            if let Some(path) = self.id_to_path.remove(&id) {
-                self.path_map.remove(&path);
-            }
-        }
-    }
-    pub fn remove_game_object(&mut self, game_object: Id) {
-        if let Some(assets) = self.object_assets.remove(&game_object) {
-            for asset_id in assets {
-                let should_remove = if let Some(users) = self.asset_users.get_mut(&asset_id) {
-                    users.remove(&game_object);
-                    users.is_empty()
-                } else {
-                    false
-                };
-
-                if should_remove {
-                    self.asset_users.remove(&asset_id);
-                    self.assets.remove(&asset_id);
-                    if let Some(path) = self.id_to_path.remove(&asset_id) {
-                        self.path_map.remove(&path);
-                    }
-                }
-            }
-        }
+        asset
     }
 }
 

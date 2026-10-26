@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use engine_core::{
-    core::{AppBuilder, AssetCache, Context, CoreApi, Handler},
+    core::{AppBuilder, Context, CoreApi, Handler},
     math::{Color, Rect, Vector2},
     plugin::Plugin,
 };
@@ -13,7 +13,7 @@ use sdl2::{
 
 pub use sdl2::render::Texture;
 
-use crate::{DrawCommand, DrawCommandType, DrawData};
+use crate::{DrawCommand, DrawCommandType, DrawData, TextureManager};
 
 pub struct DrawQueue {
     draw_queue: BTreeMap<i32, Vec<DrawCommand>>,
@@ -64,23 +64,19 @@ pub struct Sdl2Plugin;
 impl Plugin for Sdl2Plugin {
     fn build(&mut self, app: &mut AppBuilder) {
         app.set_resource(DrawQueue::new());
-        app.set_resource(AssetCache::<Texture>::new());
+        app.set_resource(TextureManager::new());
+        app.add_plugin(Sdl2Plugin);
     }
     fn begin_draw(&mut self, ctx: &mut Context, _blending: f32) {
-        let Some(sdl2_context) = ctx.get_resource_mut::<Sdl2Context>() else {
-            return;
-        };
+        let sdl2_context = ctx.require_resource_mut::<Sdl2Context>();
         sdl2_context
             .canvas
             .set_draw_color(sdl2::pixels::Color::BLACK);
         sdl2_context.canvas.clear();
     }
     fn end_draw(&mut self, ctx: &mut Context, _blending: f32) {
-        let Some((sdl2_context, assets, draw_queue)) =
-            ctx.get3_resources_mut::<Sdl2Context, AssetCache<Texture>, DrawQueue>()
-        else {
-            return;
-        };
+        let (sdl2_context, assets, draw_queue) =
+            ctx.require_query_mut::<(Sdl2Context, TextureManager, DrawQueue)>();
         let window_size = (800, 600);
         self.render(
             assets,
@@ -101,7 +97,7 @@ pub struct Sdl2Context {
 impl Sdl2Plugin {
     pub fn render(
         &mut self,
-        assets: &mut AssetCache<Texture>,
+        assets: &mut TextureManager,
         draw_queue: &mut DrawQueue,
         window_size: (u32, u32),
         camera_pos: Vector2,
@@ -165,7 +161,7 @@ impl Sdl2Plugin {
                             .set_draw_color(engine_color_to_sdl2(mat.color));
                         sdl2_context
                             .canvas
-                            .draw_rect(engine_rect_to_sdl2(dst_rect))
+                            .fill_rect(engine_rect_to_sdl2(dst_rect))
                             .unwrap();
                     }
                 }

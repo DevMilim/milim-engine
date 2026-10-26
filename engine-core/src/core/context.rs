@@ -7,7 +7,7 @@ use crate::{
     core::{AppCommands, CoreApi, CoreSystems, EngineApi, EventApi, Id, SceneApi, WorldApi},
     events::{EventManager, GlobalEvent, SpawnEvent},
     object::GameObject,
-    resources::Resources,
+    resources::{Query, Resources},
     world::Scene,
 };
 
@@ -69,13 +69,11 @@ impl<'a> CoreApi for Context<'a> {
         self.resources.require_mut::<T>()
     }
 
-    fn get2_resources_mut<T1: 'static, T2: 'static>(&mut self) -> Option<(&mut T1, &mut T2)> {
-        self.resources.get2_mut::<T1, T2>()
+    fn query_resources_mut<Q: Query>(&mut self) -> Option<Q::Refs<'_>> {
+        self.resources.query_mut::<Q>()
     }
-    fn get3_resources_mut<T1: 'static, T2: 'static, T3: 'static>(
-        &mut self,
-    ) -> Option<(&mut T1, &mut T2, &mut T3)> {
-        self.resources.get3_mut::<T1, T2, T3>()
+    fn require_query_mut<Q: Query>(&mut self) -> Q::Refs<'_> {
+        self.resources.require_query_mut::<Q>()
     }
 
     fn get_resource_mut<T: 'static>(&mut self) -> Option<&mut T> {

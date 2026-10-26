@@ -5,9 +5,11 @@ use sdl2::event::Event;
 
 mod draw_command;
 mod plugin;
+mod texture;
 
 pub use draw_command::*;
 pub use plugin::*;
+pub use texture::*;
 
 pub struct Sdl2Runner {
     pub title: String,

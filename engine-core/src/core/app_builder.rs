@@ -1,6 +1,6 @@
 use crate::{
     plugin::{Plugin, PluginManager},
-    resources::Resources,
+    resources::{Query, Resources},
 };
 
 pub struct AppBuilder<'a> {
@@ -28,13 +28,11 @@ impl<'a> AppBuilder<'a> {
         self.resources.require_mut::<T>()
     }
 
-    pub fn get2_resources_mut<T1: 'static, T2: 'static>(&mut self) -> Option<(&mut T1, &mut T2)> {
-        self.resources.get2_mut::<T1, T2>()
+    pub fn query_resources_mut<Q: Query>(&mut self) -> Option<Q::Refs<'_>> {
+        self.resources.query_mut::<Q>()
     }
-    pub fn get3_resources_mut<T1: 'static, T2: 'static, T3: 'static>(
-        &mut self,
-    ) -> Option<(&mut T1, &mut T2, &mut T3)> {
-        self.resources.get3_mut::<T1, T2, T3>()
+    pub fn require_query_mut<Q: Query>(&mut self) -> Q::Refs<'_> {
+        self.resources.require_query_mut::<Q>()
     }
 
     pub fn get_resource_mut<T: 'static>(&mut self) -> Option<&mut T> {
@@ -44,9 +42,12 @@ impl<'a> AppBuilder<'a> {
     pub fn remove_resource<T: 'static>(&mut self) -> Option<T> {
         self.resources.remove::<T>()
     }
-    pub fn add_plugin(mut self, mut plugin: impl Plugin) -> Self {
-        plugin.build(&mut AppBuilder::new(&mut self.resources, &mut self.plugins));
-        self.plugins.add_plugin(plugin);
+    pub fn add_plugin<T: Plugin>(&mut self, mut plugin: T) -> &mut Self {
+        if !self.plugins.reserve::<T>() {
+            return self;
+        }
+        plugin.build(self);
+        self.plugins.push_reserved(plugin);
         self
     }
     pub fn has_plugin<T: Plugin>(&self) -> bool {

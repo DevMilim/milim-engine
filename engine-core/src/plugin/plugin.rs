@@ -66,4 +66,15 @@ impl PluginManager {
     pub fn len(&self) -> usize {
         self.plugins.len()
     }
+    pub fn contains<T: Plugin>(&self) -> bool {
+        self.registered.contains(&TypeId::of::<T>())
+    }
+
+    pub(crate) fn reserve<T: Plugin>(&mut self) -> bool {
+        self.registered.insert(TypeId::of::<T>())
+    }
+
+    pub(crate) fn push_reserved<T: Plugin>(&mut self, plugin: T) {
+        self.plugins.push(Box::new(plugin));
+    }
 }

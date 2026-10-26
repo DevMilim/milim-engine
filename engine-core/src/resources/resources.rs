@@ -53,6 +53,12 @@ impl Resources {
             panic!("Engine Error: Required resource not found")
         }
     }
+    pub fn require_query_mut<Q: Query>(&mut self) -> Q::Refs<'_> {
+        match Q::get_many_mut(self) {
+            Some(res) => res,
+            None => panic!("Engine Error: Required resource not found"),
+        }
+    }
 
     pub fn remove<T: 'static>(&mut self) -> Option<T> {
         let type_id = TypeId::of::<T>();
@@ -71,39 +77,48 @@ impl Resources {
     pub fn contains<T: 'static>(&self) -> bool {
         self.data.contains_key(&TypeId::of::<T>())
     }
-    pub fn get2_mut<T1: 'static, T2: 'static>(&mut self) -> Option<(&mut T1, &mut T2)> {
-        let (ia, ib) = (TypeId::of::<T1>(), TypeId::of::<T2>());
-
-        if ia == ib {
-            return None;
-        }
-
-        let [Some(x), Some(y)] = self.data.get_disjoint_mut([&ia, &ib]) else {
-            return None;
-        };
-
-        Some((
-            x.resource.downcast_mut::<T1>()?,
-            y.resource.downcast_mut::<T2>()?,
-        ))
-    }
-    pub fn get3_mut<T1: 'static, T2: 'static, T3: 'static>(
-        &mut self,
-    ) -> Option<(&mut T1, &mut T2, &mut T3)> {
-        let (ia, ib, ic) = (TypeId::of::<T1>(), TypeId::of::<T2>(), TypeId::of::<T3>());
-
-        if ia == ib || ia == ic || ib == ic {
-            return None;
-        }
-
-        let [Some(x), Some(y), Some(z)] = self.data.get_disjoint_mut([&ia, &ib, &ic]) else {
-            return None;
-        };
-
-        Some((
-            x.resource.downcast_mut::<T1>()?,
-            y.resource.downcast_mut::<T2>()?,
-            z.resource.downcast_mut::<T3>()?,
-        ))
+    pub fn query_mut<Q: Query>(&mut self) -> Option<Q::Refs<'_>> {
+        Q::get_many_mut(self)
     }
 }
+
+pub trait Query {
+    type Refs<'a>;
+    fn get_many_mut(res: &mut Resources) -> Option<Self::Refs<'_>>;
+}
+
+macro_rules! impl_get_many {
+    ($n:literal; $($T:ident),+) => {
+        impl<$($T: 'static),+> Query for ($($T,)+) {
+            type Refs<'a> = ($(&'a mut $T,)+);
+
+            #[allow(non_snake_case)]
+            fn get_many_mut(res: &mut Resources) -> Option<Self::Refs<'_>> {
+                let ids: [TypeId; $n] = [$(TypeId::of::<$T>()),+];
+
+                for i in 0..$n {
+                    for j in (i + 1)..$n {
+                        if ids[i] == ids[j] {
+                            return None;
+                        }
+                    }
+                }
+
+                let [$(Some($T)),+] = res.data.get_disjoint_mut(ids.each_ref()) else {
+                    return None;
+                };
+
+                Some(($($T.resource.downcast_mut::<$T>()?,)+))
+            }
+        }
+    };
+}
+
+impl_get_many!(1; A);
+impl_get_many!(2; A, B);
+impl_get_many!(3; A, B, C);
+impl_get_many!(4; A, B, C, D);
+impl_get_many!(5; A, B, C, D, E);
+impl_get_many!(6; A, B, C, D, E, F);
+impl_get_many!(7; A, B, C, D, E, F, G);
+impl_get_many!(8; A, B, C, D, E, F, G, H);

@@ -6,6 +6,7 @@ use std::{
 use crate::{
     events::GlobalEvent,
     object::{GameObject, Id},
+    resources::Query,
     world::Scene,
 };
 
@@ -18,10 +19,8 @@ pub trait CoreApi {
     fn get_resource<T: 'static>(&self) -> Option<&T>;
     fn get_resource_mut<T: 'static>(&mut self) -> Option<&mut T>;
     fn require_resource_mut<T: 'static>(&mut self) -> &mut T;
-    fn get2_resources_mut<T1: 'static, T2: 'static>(&mut self) -> Option<(&mut T1, &mut T2)>;
-    fn get3_resources_mut<T1: 'static, T2: 'static, T3: 'static>(
-        &mut self,
-    ) -> Option<(&mut T1, &mut T2, &mut T3)>;
+    fn query_resources_mut<Q: Query>(&mut self) -> Option<Q::Refs<'_>>;
+    fn require_query_mut<Q: Query>(&mut self) -> Q::Refs<'_>;
     fn remove_resource<T: 'static>(&mut self);
 }
 
