@@ -6,6 +6,7 @@ use crate::core::{AppBuilder, Context};
 
 pub trait Plugin: Any + 'static {
     fn build(&mut self, _app: &mut AppBuilder) {}
+    fn ready(&mut self, _ctx: &mut Context) {}
     fn start_frame(&mut self, _ctx: &mut Context) {}
     fn end_frame(&mut self, _ctx: &mut Context) {}
     fn pre_fixed_update(&mut self, _ctx: &mut Context, _delta: f32) {}

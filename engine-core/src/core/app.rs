@@ -186,7 +186,13 @@ impl<S: Scene + 'static, P: GameObjectDispatch> App<S, P> {
             p.shutdown(&mut ctx);
         }
     }
-    pub fn run(self, runner: impl Runner) -> Result<(), ()> {
+    pub fn run(mut self, runner: impl Runner) -> Result<(), ()> {
+        {
+            let mut ctx = Context::new(&mut self.systems, &mut self.resources, &mut self.events);
+            for plugin in self.plugins.iter_mut() {
+                plugin.ready(&mut ctx);
+            }
+        }
         runner.run(self)
     }
 }
