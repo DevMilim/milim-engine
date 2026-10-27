@@ -19,14 +19,12 @@ use winit::{
     keyboard::PhysicalKey,
 };
 
-use crate::{
-    WindowSize,
-    input::{Input, InputType},
-};
+use crate::input::{Input, InputType};
 
 pub struct WindowContext {
     pub window: Arc<Window>,
     pub handler: Arc<OwnedDisplayHandle>,
+    pub size: PhysicalSize<u32>,
 }
 
 pub struct WinitApp<S: Scene + 'static, P: GameObjectDispatch = EmptyGlobals> {
@@ -49,8 +47,11 @@ impl<S: Scene + 'static, P: GameObjectDispatch> ApplicationHandler for WinitApp<
             app.set_resource::<WindowContext>(WindowContext {
                 window: window.clone(),
                 handler: Arc::new(event_loop.owned_display_handle()),
+                size: window.inner_size(),
             });
+            app.start_plugins();
         }
+
         self.last = Instant::now();
         self.window = Some(window)
     }
@@ -105,9 +106,8 @@ impl<S: Scene + 'static, P: GameObjectDispatch> ApplicationHandler for WinitApp<
             WindowEvent::Resized(size) if size.width > 0 && size.height > 0 => {
                 if let Some(window) = &self.window {
                     if let Some(app) = &mut self.app {
-                        let window_size = app.require_resource_mut::<WindowSize>();
-                        window_size.width = size.width;
-                        window_size.height = size.width;
+                        let window_size = app.require_resource_mut::<WindowContext>();
+                        window_size.size = size
                     }
                     window.request_redraw();
                 }
@@ -149,6 +149,7 @@ pub struct WinitRunner {
     pub frame_limit: Option<u32>,
 }
 impl Runner for WinitRunner {
+    type Err = ();
     fn run<S, P>(self, mut app: App<S, P>) -> Result<(), ()>
     where
         S: Scene + 'static,
@@ -156,11 +157,6 @@ impl Runner for WinitRunner {
     {
         let el = EventLoop::new().unwrap();
         el.set_control_flow(ControlFlow::Poll);
-
-        app.set_resource(WindowSize {
-            width: 800,
-            height: 600,
-        });
 
         let mut winit_app = WinitApp {
             app: Some(app),

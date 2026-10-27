@@ -4,7 +4,7 @@ use engine_core::{core::CoreApi, plugin::Plugin};
 use milim_winit::runner::{OwnedDisplayHandle, PhysicalSize, Window, WindowContext};
 use wgpu::{
     CurrentSurfaceTexture, DeviceDescriptor, Instance, PresentMode::AutoNoVsync, RenderPipeline,
-    RequestAdapterOptions, TextureUsages,
+    RequestAdapterOptions, SurfaceConfiguration, TextureUsages,
 };
 
 pub struct WgpuState {
@@ -15,6 +15,7 @@ pub struct WgpuState {
     pub surface: wgpu::Surface<'static>,
     pub render_pipeline: RenderPipeline,
     pub surface_format: wgpu::TextureFormat,
+    pub config: SurfaceConfiguration,
     pub size: PhysicalSize<u32>,
 }
 
@@ -73,6 +74,18 @@ impl WgpuState {
             multiview_mask: None,
             cache: None,
         });
+        let config = wgpu::SurfaceConfiguration {
+            usage: TextureUsages::RENDER_ATTACHMENT,
+            format: surface_format,
+            color_space: wgpu::SurfaceColorSpace::Auto,
+            view_formats: vec![surface_format.add_srgb_suffix()],
+            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            width: size.width,
+            height: size.height,
+            desired_maximum_frame_latency: 2,
+            present_mode: AutoNoVsync,
+        };
+        surface.configure(&device, &config);
 
         let mut state = WgpuState {
             instance,
@@ -83,23 +96,13 @@ impl WgpuState {
             surface_format,
             render_pipeline,
             size,
+            config,
         };
         state.configure_surface();
         state
     }
     fn configure_surface(&mut self) {
-        let surface_config = wgpu::SurfaceConfiguration {
-            usage: TextureUsages::RENDER_ATTACHMENT,
-            format: self.surface_format,
-            color_space: wgpu::SurfaceColorSpace::Auto,
-            view_formats: vec![self.surface_format.add_srgb_suffix()],
-            alpha_mode: wgpu::CompositeAlphaMode::Auto,
-            width: self.size.width,
-            height: self.size.height,
-            desired_maximum_frame_latency: 2,
-            present_mode: AutoNoVsync,
-        };
-        self.surface.configure(&self.device, &surface_config);
+        self.surface.configure(&self.device, &self.config);
     }
 }
 
@@ -125,11 +128,23 @@ impl Plugin for WgpuPlugin {
             self.state = Some(spawn(async { WgpuState::new(handler, window).await }));
         }
     }
+    fn pre_update(&mut self, ctx: &mut engine_core::core::Context, _delta: f32) {
+        if let Some(state) = &mut self.state {
+            let window_size = ctx.require_resource_mut::<WindowContext>();
+            let config_size = PhysicalSize::new(state.config.width, state.config.height);
+            if config_size != window_size.size {
+                state.config.width = config_size.width;
+                state.config.height = config_size.height;
+                state.configure_surface();
+            }
+        }
+    }
     fn end_draw(&mut self, _ctx: &mut engine_core::core::Context, _blending: f32) {
         let wgpu_state = self.state.as_ref().unwrap();
-        let CurrentSurfaceTexture::Success(_frame) = wgpu_state.surface.get_current_texture()
-        else {
+        let CurrentSurfaceTexture::Success(frame) = wgpu_state.surface.get_current_texture() else {
             return;
         };
+
+        wgpu_state.queue.present(frame);
     }
 }

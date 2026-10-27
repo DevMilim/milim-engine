@@ -92,6 +92,13 @@ impl<S: Scene + 'static, P: GameObjectDispatch> App<S, P> {
         self.resources.remove::<T>();
     }
 
+    pub fn start_plugins(&mut self) {
+        let mut ctx = Context::new(&mut self.systems, &mut self.resources, &mut self.events);
+        for plugin in self.plugins.iter_mut() {
+            plugin.ready(&mut ctx);
+        }
+    }
+
     pub fn run_step(&mut self, delta: f32) -> bool {
         self.update_frame_count += 1;
 
@@ -186,13 +193,7 @@ impl<S: Scene + 'static, P: GameObjectDispatch> App<S, P> {
             p.shutdown(&mut ctx);
         }
     }
-    pub fn run(mut self, runner: impl Runner) -> Result<(), ()> {
-        {
-            let mut ctx = Context::new(&mut self.systems, &mut self.resources, &mut self.events);
-            for plugin in self.plugins.iter_mut() {
-                plugin.ready(&mut ctx);
-            }
-        }
+    pub fn run<R: Runner>(self, runner: R) -> Result<(), R::Err> {
         runner.run(self)
     }
 }
