@@ -6,9 +6,10 @@ edition = "2024"
 [dependencies]
 engine-core = { version = "0.1.0", path = "engine-core" }
 macros = { version = "0.2.0", path = "macros" }
+milim-collision = { version = "0.1.0", path = "milim-collision" }
 milim-pixels = { version = "0.1.0", path = "milim-pixels" }
 milim-wgpu = { version = "0.1.0", path = "milim-wgpu" }
 milim-winit = { version = "0.1.0", path = "milim-winit" }
 
 [workspace]
-members = ["engine-core", "macros", "milim-pixels", "milim-wgpu", "milim-winit"]
+members = ["engine-core", "macros", "milim-collision", "milim-pixels", "milim-wgpu", "milim-winit"]

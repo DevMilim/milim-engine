@@ -1,0 +1,748 @@
+mod aabb;
+mod layer;
+mod plugin;
+
+pub use aabb::*;
+pub use layer::*;
+pub use plugin::*;
+
+use engine_core::{math::Vector2, object::Id};
+use rustc_hash::FxHashMap;
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CollisionFlag {
+    pub on_floor: bool,
+    pub on_wall: bool,
+    pub on_ceiling: bool,
+}
+
+#[derive(Clone, Copy)]
+pub struct ColliderData {
+    pub aabb: AABB,
+    pub layer: Layer,
+    pub mask: Layer,
+    pub is_sensor: bool,
+    pub on_way_collision: bool,
+}
+
+impl ColliderData {
+    #[inline]
+    pub fn can_collide(&self, other: &Self) -> bool {
+        (self.mask.0 & other.layer.0) != 0 && (other.mask.0 & self.layer.0) != 0
+    }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
+pub struct ColliderKey {
+    pub key: Id,
+    pub id: Id,
+}
+
+type Cell = (i32, i32);
+
+const CELL_SIZE: i32 = 64;
+
+#[inline]
+pub fn cell_of(aabb: &AABB, cell_size: i32) -> impl Iterator<Item = Cell> {
+    let min_x = aabb.x.div_euclid(cell_size);
+    let min_y = aabb.y.div_euclid(cell_size);
+
+    let max_x = (aabb.x + aabb.width - 1).div_euclid(cell_size);
+    let max_y = (aabb.y + aabb.height - 1).div_euclid(cell_size);
+
+    (min_x..=max_x).flat_map(move |x| (min_y..=max_y).map(move |y| (x, y)))
+}
+
+type DenseIndex = u32;
+
+#[derive(Default)]
+pub struct CollisionWorld {
+    keys: Vec<ColliderKey>,
+    data: Vec<ColliderData>,
+
+    key_to_index: FxHashMap<ColliderKey, DenseIndex>,
+
+    owners: FxHashMap<Id, Vec<ColliderKey>>,
+
+    cell_offsets: FxHashMap<Cell, (u32, u32)>,
+    cell_entries: Vec<DenseIndex>,
+    scratch_cells: Vec<(Cell, DenseIndex)>,
+
+    last_overlaps: Vec<(ColliderKey, ColliderKey)>,
+    current_overlaps: Vec<(ColliderKey, ColliderKey)>,
+
+    seen_stamp: Vec<u32>,
+    current_stamp: u32,
+
+    query_result: Vec<DenseIndex>,
+    owner_keys_scratch: Vec<ColliderKey>,
+    cell_slots_scratch: Vec<(u32, u32)>,
+
+    entered_scratch: Vec<(ColliderKey, ColliderKey)>,
+    exited_scratch: Vec<(ColliderKey, ColliderKey)>,
+
+    grid_dirty: bool,
+}
+
+impl CollisionWorld {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn update_collider_geometry(
+        &mut self,
+        key: ColliderKey,
+        layer: Layer,
+        mask: Layer,
+        is_sensor: bool,
+        on_way_collision: bool,
+        size: (i32, i32),
+        fallback_pos: (i32, i32),
+    ) {
+        if let Some(&idx) = self.key_to_index.get(&key) {
+            self.grid_dirty = true;
+            let d = &mut self.data[idx as usize];
+            d.layer = layer;
+            d.mask = mask;
+            d.is_sensor = is_sensor;
+            d.on_way_collision = on_way_collision;
+            d.aabb.width = size.0;
+            d.aabb.height = size.1;
+            return;
+        }
+        let data = ColliderData {
+            aabb: AABB {
+                x: fallback_pos.0,
+                y: fallback_pos.1,
+                width: size.0,
+                height: size.1,
+            },
+            layer,
+            mask,
+            is_sensor,
+            on_way_collision,
+        };
+        self.update_collider(key, data);
+    }
+
+    pub fn update_collider(&mut self, key: ColliderKey, data: ColliderData) {
+        self.grid_dirty = true;
+        if let Some(&idx) = self.key_to_index.get(&key) {
+            self.data[idx as usize] = data;
+            return;
+        }
+
+        let idx = self.data.len() as DenseIndex;
+        self.keys.push(key);
+        self.data.push(data);
+        self.seen_stamp.push(0);
+        self.key_to_index.insert(key, idx);
+        self.owners.entry(key.id).or_default().push(key);
+    }
+
+    pub fn remove_collider(&mut self, key: ColliderKey) {
+        let Some(idx) = self.key_to_index.remove(&key) else {
+            return;
+        };
+        self.grid_dirty = true;
+        let idx = idx as usize;
+        let last = self.data.len() - 1;
+
+        self.data.swap_remove(idx);
+        self.keys.swap_remove(idx);
+        self.seen_stamp.swap_remove(idx);
+
+        if idx != last {
+            let moved_key = self.keys[idx];
+            self.key_to_index.insert(moved_key, idx as DenseIndex);
+        }
+
+        if let Some(list) = self.owners.get_mut(&key.id) {
+            list.retain(|k| *k != key);
+            if list.is_empty() {
+                self.owners.remove(&key.id);
+            }
+        }
+    }
+
+    #[inline]
+    pub fn get(&self, key: &ColliderKey) -> Option<&ColliderData> {
+        self.key_to_index
+            .get(key)
+            .map(|&idx| &self.data[idx as usize])
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&ColliderKey, &ColliderData)> {
+        self.keys.iter().zip(self.data.iter())
+    }
+
+    fn rebuild_grid(&mut self) {
+        self.grid_dirty = false;
+        self.scratch_cells.clear();
+        self.cell_offsets.clear();
+
+        for (idx, data) in self.data.iter().enumerate() {
+            for cell in cell_of(&data.aabb, CELL_SIZE) {
+                self.scratch_cells.push((cell, idx as DenseIndex));
+                self.cell_offsets.entry(cell).or_insert((0, 0)).1 += 1;
+            }
+        }
+
+        self.cell_entries.clear();
+        self.cell_entries.resize(self.scratch_cells.len(), 0);
+
+        let mut cursor = 0u32;
+        for slot in self.cell_offsets.values_mut() {
+            let count = slot.1;
+            slot.0 = cursor;
+            slot.1 = 0;
+            cursor += count;
+        }
+
+        for &(cell, idx) in &self.scratch_cells {
+            let slot = self.cell_offsets.get_mut(&cell).unwrap();
+            let write_pos = slot.0 + slot.1;
+            self.cell_entries[write_pos as usize] = idx;
+            slot.1 += 1;
+        }
+    }
+
+    fn query_nearby(&mut self, aabb: &AABB) {
+        if self.grid_dirty {
+            self.rebuild_grid();
+        }
+        self.current_stamp += 1;
+        self.query_result.clear();
+
+        for cell in cell_of(aabb, CELL_SIZE) {
+            let Some(&(start, count)) = self.cell_offsets.get(&cell) else {
+                continue;
+            };
+            let slice = &self.cell_entries[start as usize..(start + count) as usize];
+            for &idx in slice {
+                let stamp = &mut self.seen_stamp[idx as usize];
+                if *stamp != self.current_stamp {
+                    *stamp = self.current_stamp;
+                    self.query_result.push(idx);
+                }
+            }
+        }
+    }
+    pub(crate) fn step(&mut self) {
+        self.rebuild_grid();
+        self.current_overlaps.clear();
+
+        self.cell_slots_scratch.clear();
+        self.cell_slots_scratch
+            .extend(self.cell_offsets.values().copied());
+
+        for &(start, count) in &self.cell_slots_scratch {
+            let bucket = &self.cell_entries[start as usize..(start + count) as usize];
+
+            for i in 0..bucket.len() {
+                for j in (i + 1)..bucket.len() {
+                    let (a, b) = (bucket[i], bucket[j]);
+                    let pair = if a < b { (a, b) } else { (b, a) };
+
+                    let ka = self.keys[pair.0 as usize];
+                    let kb = self.keys[pair.1 as usize];
+                    if ka.id == kb.id {
+                        continue;
+                    }
+
+                    let da = &self.data[pair.0 as usize];
+                    let db = &self.data[pair.1 as usize];
+
+                    if da.can_collide(db) && da.aabb.intersects(&db.aabb) {
+                        let key_pair = if ka < kb { (ka, kb) } else { (kb, ka) };
+                        self.current_overlaps.push(key_pair);
+                    }
+                }
+            }
+        }
+
+        self.current_overlaps.sort_unstable();
+        self.current_overlaps.dedup();
+    }
+
+    pub(crate) fn commit(&mut self) {
+        self.last_overlaps.clear();
+        self.last_overlaps.extend_from_slice(&self.current_overlaps);
+    }
+
+    fn diff_pairs_into(
+        a: &[(ColliderKey, ColliderKey)],
+        b: &[(ColliderKey, ColliderKey)],
+        out: &mut Vec<(ColliderKey, ColliderKey)>,
+    ) {
+        out.clear();
+        let mut j = 0usize;
+        for &pair in a {
+            while j < b.len() && b[j] < pair {
+                j += 1;
+            }
+            let present_in_b = j < b.len() && b[j] == pair;
+            if !present_in_b {
+                out.push(pair);
+            }
+        }
+    }
+
+    pub(crate) fn get_entered_pairs(&mut self) -> &[(ColliderKey, ColliderKey)] {
+        let CollisionWorld {
+            current_overlaps,
+            last_overlaps,
+            entered_scratch,
+            ..
+        } = self;
+        Self::diff_pairs_into(current_overlaps, last_overlaps, entered_scratch);
+        entered_scratch
+    }
+
+    pub(crate) fn get_exited_pairs(&mut self) -> &[(ColliderKey, ColliderKey)] {
+        let CollisionWorld {
+            current_overlaps,
+            last_overlaps,
+            exited_scratch,
+            ..
+        } = self;
+        Self::diff_pairs_into(last_overlaps, current_overlaps, exited_scratch);
+        exited_scratch
+    }
+    fn my_keys_into_scratch(&mut self, my_id: Id) {
+        self.owner_keys_scratch.clear();
+        if let Some(keys) = self.owners.get(&my_id) {
+            self.owner_keys_scratch.extend_from_slice(keys);
+        }
+    }
+
+    fn filter_pairs(
+        &self,
+        pairs: impl Iterator<Item = (ColliderKey, ColliderKey)>,
+        my_id: Id,
+    ) -> Vec<ColliderKey> {
+        pairs
+            .filter_map(|(a, b)| {
+                (a.id == my_id)
+                    .then_some(b)
+                    .or_else(|| (b.id == my_id).then_some(a))
+            })
+            .collect()
+    }
+    pub fn get_entered_for(&mut self, my_id: Id) -> Vec<ColliderKey> {
+        let pairs: Vec<_> = self.get_entered_pairs().iter().copied().collect();
+        self.filter_pairs(pairs.into_iter(), my_id)
+    }
+
+    pub fn get_exited_for(&mut self, my_id: Id) -> Vec<ColliderKey> {
+        let pairs: Vec<_> = self.get_exited_pairs().iter().copied().collect();
+        self.filter_pairs(pairs.into_iter(), my_id)
+    }
+    pub fn check_collisions(&mut self, my_id: Id) -> bool {
+        self.my_keys_into_scratch(my_id);
+
+        for i in 0..self.owner_keys_scratch.len() {
+            let key = self.owner_keys_scratch[i];
+            let Some(&idx) = self.key_to_index.get(&key) else {
+                continue;
+            };
+            let my_data = self.data[idx as usize];
+            if my_data.is_sensor {
+                continue;
+            }
+
+            self.query_nearby(&my_data.aabb);
+
+            for i in 0..self.query_result.len() {
+                let other_idx = self.query_result[i];
+
+                if self.keys[other_idx as usize].id == my_id {
+                    continue;
+                }
+
+                let other = self.data[other_idx as usize];
+
+                if other.is_sensor || !my_data.can_collide(&other) {
+                    continue;
+                }
+                if my_data.aabb.intersects(&other.aabb) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    pub fn get_correction(
+        &mut self,
+        my_id: Id,
+        my_data: &ColliderData,
+        velocity: Vector2,
+    ) -> Option<Vector2> {
+        self.query_nearby(&my_data.aabb);
+        for i in 0..self.query_result.len() {
+            let idx = self.query_result[i];
+
+            if self.keys[idx as usize].id == my_id {
+                continue;
+            }
+            let other = self.data[idx as usize];
+
+            if my_data.is_sensor || other.is_sensor || !my_data.can_collide(&other) {
+                continue;
+            }
+
+            if other.on_way_collision {
+                if velocity.y <= 0.0 {
+                    continue;
+                }
+                let old_bottom = my_data.aabb.y + my_data.aabb.height - velocity.y.round() as i32;
+                let new_bottom = my_data.aabb.y + my_data.aabb.height;
+
+                let platform_top = other.aabb.y;
+
+                if !self.should_collide_oneway(
+                    old_bottom,
+                    new_bottom,
+                    platform_top,
+                    velocity.y.round() as i32,
+                ) {
+                    continue;
+                }
+            }
+            if my_data.aabb.intersects(&other.aabb) {
+                let mut overlap = Vector2::ZERO;
+
+                if velocity.x != 0.0 {
+                    overlap.x = if velocity.x > 0.0 {
+                        (other.aabb.min_x() - my_data.aabb.max_x()) as f32
+                    } else {
+                        (other.aabb.max_x() - my_data.aabb.min_x()) as f32
+                    };
+                } else if velocity.y != 0.0 {
+                    overlap.y = if velocity.y > 0.0 {
+                        (other.aabb.min_y() - my_data.aabb.max_y()) as f32
+                    } else {
+                        (other.aabb.max_y() - my_data.aabb.min_y()) as f32
+                    };
+                } else {
+                    if let Some(o) = my_data.aabb.get_overlap(&other.aabb) {
+                        overlap = o;
+                    }
+                }
+
+                return Some(overlap);
+            }
+        }
+        None
+    }
+
+    pub fn move_and_slide(
+        &mut self,
+        my_id: Id,
+        position: &mut Vector2,
+        velocity: &mut Vector2,
+    ) -> CollisionFlag {
+        let mut flags = CollisionFlag::default();
+        position.x += velocity.x;
+        self.translate_my_colliders(my_id, Vector2::new(velocity.x, 0.0));
+        flags.on_wall = self.resolve_axis(my_id, position, velocity, true).x != 0.0;
+        position.y += velocity.y;
+        self.translate_my_colliders(my_id, Vector2::new(0.0, velocity.y));
+        let corr_y = self.resolve_axis(my_id, position, velocity, false).y;
+        flags.on_floor = corr_y < 0.0;
+        flags.on_ceiling = corr_y > 0.0;
+
+        flags
+    }
+
+    pub fn translate_my_colliders(&mut self, my_id: Id, offset: Vector2) {
+        let dx = offset.x.round() as i32;
+        let dy = offset.y.round() as i32;
+        if dx == 0 && dy == 0 {
+            return;
+        }
+        let Some(owner_keys) = self.owners.get(&my_id) else {
+            return;
+        };
+        for key in owner_keys {
+            if let Some(&idx) = self.key_to_index.get(key) {
+                let d = &mut self.data[idx as usize];
+                d.aabb.x += dx;
+                d.aabb.y += dy;
+            }
+        }
+        self.grid_dirty = true;
+    }
+
+    pub fn resolve_axis(
+        &mut self,
+        my_id: Id,
+        position: &mut Vector2,
+        velocity: &mut Vector2,
+        is_x_axis: bool,
+    ) -> Vector2 {
+        self.my_keys_into_scratch(my_id);
+
+        let mut final_correction = Vector2::ZERO;
+        let mut iterations = 0;
+        const MAX_ITERATIONS: u32 = 4;
+
+        while iterations < MAX_ITERATIONS {
+            let mut moved = false;
+
+            for i in 0..self.owner_keys_scratch.len() {
+                let key = self.owner_keys_scratch[i];
+                let Some(&idx) = self.key_to_index.get(&key) else {
+                    continue;
+                };
+                let my_data = self.data[idx as usize];
+                let vel = if is_x_axis {
+                    Vector2::new(velocity.x, 0.0)
+                } else {
+                    Vector2::new(0.0, velocity.y)
+                };
+
+                if let Some(c) = self.get_correction(my_id, &my_data, vel) {
+                    let axis_correction = if is_x_axis {
+                        Vector2::new(c.x, 0.0)
+                    } else {
+                        Vector2::new(0.0, c.y)
+                    };
+
+                    if axis_correction != Vector2::ZERO {
+                        if is_x_axis {
+                            final_correction.x += axis_correction.x;
+                            position.x += axis_correction.x;
+                            velocity.x = 0.0;
+                        } else {
+                            final_correction.y += axis_correction.y;
+                            position.y += axis_correction.y;
+                            velocity.y = 0.0;
+                        }
+
+                        self.translate_my_colliders(my_id, axis_correction);
+                        moved = true;
+
+                        break;
+                    }
+                }
+            }
+
+            if !moved {
+                break;
+            }
+
+            iterations += 1;
+        }
+
+        final_correction
+    }
+
+    pub fn snap_to_floor(&mut self, my_id: Id, snap_length: i32) -> Option<i32> {
+        self.my_keys_into_scratch(my_id);
+
+        let mut best_snap = None;
+
+        for i in 0..self.owner_keys_scratch.len() {
+            let key = self.owner_keys_scratch[i];
+            let Some(&idx) = self.key_to_index.get(&key) else {
+                continue;
+            };
+            let my_data = self.data[idx as usize];
+            if my_data.is_sensor {
+                continue;
+            }
+
+            let my_left = my_data.aabb.x;
+            let my_right = my_data.aabb.x + my_data.aabb.width;
+            let my_bottom = my_data.aabb.y + my_data.aabb.height;
+
+            let search_aabb = AABB {
+                x: my_data.aabb.x,
+                y: my_data.aabb.y,
+                width: my_data.aabb.width,
+                height: my_data.aabb.height + snap_length + 1,
+            };
+            self.query_nearby(&search_aabb);
+
+            for i in 0..self.query_result.len() {
+                let other_idx = self.query_result[i];
+                if self.keys[other_idx as usize].id == my_id {
+                    continue;
+                }
+                let other = self.data[other_idx as usize];
+                if other.is_sensor || !my_data.can_collide(&other) {
+                    continue;
+                }
+
+                let other_left = other.aabb.x;
+                let other_right = other.aabb.x + other.aabb.width;
+                let other_top = other.aabb.y;
+
+                if my_left < other_right && my_right > other_left && my_bottom <= other_top {
+                    let gap = other_top - my_bottom;
+
+                    if gap >= 0 && gap <= snap_length {
+                        best_snap = Some(best_snap.map_or(gap, |curr: i32| gap.min(curr)));
+                    }
+                }
+            }
+        }
+
+        best_snap
+    }
+
+    pub fn should_collide_oneway(
+        &self,
+        my_old_bottom: i32,
+        my_new_bottom: i32,
+        platform_top: i32,
+        velocity_y: i32,
+    ) -> bool {
+        let margin = 4;
+
+        velocity_y >= 0 && my_old_bottom <= platform_top + margin && my_new_bottom >= platform_top
+    }
+
+    pub fn raycast(
+        &mut self,
+        origin: Vector2,
+        direction: Vector2,
+        max_distance: f32,
+        mask: Layer,
+    ) -> Option<RaycastHit> {
+        let len = direction.length();
+        if len < 0.0001 {
+            return None;
+        }
+        let dir = direction / len;
+
+        let end = origin + dir * max_distance;
+        self.query_nearby(&ray_aabb_for(origin, end));
+
+        let mut closest: Option<(f32, DenseIndex)> = None;
+
+        for &idx in &self.query_result {
+            let data = &self.data[idx as usize];
+            if data.is_sensor || (mask.0 & data.layer.0) == 0 {
+                continue;
+            }
+            if let Some(t) = ray_vs_aabb(origin, dir, max_distance, &data.aabb) {
+                if closest.is_none_or(|(best_t, _)| t < best_t) {
+                    closest = Some((t, idx));
+                }
+            }
+        }
+
+        closest.map(|(t, idx)| RaycastHit {
+            key: self.keys[idx as usize],
+            point: origin + dir * t,
+            distance: t,
+        })
+    }
+
+    pub fn linecast(&mut self, from: Vector2, to: Vector2, mask: Layer) -> Option<RaycastHit> {
+        let delta = to - from;
+        let distance = delta.length();
+        if distance < 0.0001 {
+            return None;
+        }
+        self.raycast(from, delta / distance, distance, mask)
+    }
+
+    pub fn linecast_all(&mut self, from: Vector2, to: Vector2, mask: Layer) -> Vec<RaycastHit> {
+        let delta = to - from;
+        let distance = delta.length();
+        if distance < 0.0001 {
+            return Vec::new();
+        }
+
+        let direction = delta / distance;
+        self.query_nearby(&ray_aabb_for(from, to));
+
+        let mut hits: Vec<RaycastHit> = self
+            .query_result
+            .iter()
+            .filter_map(|&idx| {
+                let data = &self.data[idx as usize];
+                if data.is_sensor || (mask.0 & data.layer.0) == 0 {
+                    return None;
+                }
+                ray_vs_aabb(from, direction, distance, &data.aabb).map(|t| RaycastHit {
+                    key: self.keys[idx as usize],
+                    point: from + direction * t,
+                    distance: t,
+                })
+            })
+            .collect();
+
+        hits.sort_unstable_by(|a, b| a.distance.total_cmp(&b.distance));
+        hits
+    }
+}
+pub struct RaycastHit {
+    pub key: ColliderKey,
+    pub point: Vector2,
+    pub distance: f32,
+}
+fn ray_aabb_for(from: Vector2, to: Vector2) -> AABB {
+    let min_x = from.x.min(to.x);
+    let max_x = from.x.max(to.x);
+    let min_y = from.y.min(to.y);
+    let max_y = from.y.max(to.y);
+
+    AABB {
+        x: min_x as i32,
+        y: min_y as i32,
+        width: (max_x - min_x).ceil() as i32,
+        height: (max_y - min_y).ceil() as i32,
+    }
+}
+fn ray_vs_aabb(origin: Vector2, direction: Vector2, max_dist: f32, aabb: &AABB) -> Option<f32> {
+    let mut tmin = 0.0_f32;
+    let mut tmax = max_dist;
+
+    let axes = [
+        (
+            origin.x,
+            direction.x,
+            aabb.min_x() as f32,
+            aabb.max_x() as f32,
+        ),
+        (
+            origin.y,
+            direction.y,
+            aabb.min_y() as f32,
+            aabb.max_y() as f32,
+        ),
+    ];
+
+    for (o, d, lo, hi) in axes {
+        if d.abs() < f32::EPSILON {
+            if o < lo || o > hi {
+                return None;
+            }
+        } else {
+            let inv = 1.0 / d;
+            let (t1, t2) = ((lo - o) * inv, (hi - o) * inv);
+            tmin = tmin.max(t1.min(t2));
+            tmax = tmax.min(t1.max(t2));
+            if tmin > tmax {
+                return None;
+            }
+        }
+    }
+
+    Some(tmin)
+}

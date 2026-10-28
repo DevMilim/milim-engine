@@ -1,0 +1,8 @@
+[package]
+name = "milim-collision"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+engine-core = { version = "0.1.0", path = "../engine-core" }
+rustc-hash = "2.1.3"

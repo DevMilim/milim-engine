@@ -1,3 +1,4 @@
+use milim_collision::CollisionPlugin;
 use milim_engine::prelude::*;
 use milim_pixels::{PixelsPlugin, RenderQueue};
 use milim_winit::{input::InputPlugin, runner::WinitRunner};
@@ -30,6 +31,7 @@ pub enum MainScene {
 fn main() {
     let mut app = App::<MainScene>::new(Main::new().into());
     app.add_plugin(PixelsPlugin::default())
-        .add_plugin(InputPlugin);
+        .add_plugin(InputPlugin)
+        .add_plugin(CollisionPlugin);
     let _ = app.run(WinitRunner::default());
 }
