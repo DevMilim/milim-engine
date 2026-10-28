@@ -1,4 +1,4 @@
-use std::any::{Any, TypeId};
+use std::any::{Any, TypeId, type_name};
 
 use rustc_hash::FxHashMap;
 
@@ -50,13 +50,19 @@ impl Resources {
         if let Some(res) = self.get_mut::<T>() {
             return res;
         } else {
-            panic!("Engine Error: Required resource not found")
+            panic!(
+                "Engine Error: Required resource not found: {}",
+                type_name::<T>()
+            )
         }
     }
     pub fn require_query_mut<Q: Query>(&mut self) -> Q::Refs<'_> {
         match Q::get_many_mut(self) {
             Some(res) => res,
-            None => panic!("Engine Error: Required resource not found"),
+            None => panic!(
+                "Engine Error: Required resource not found: {}",
+                type_name::<Q::Refs<'_>>()
+            ),
         }
     }
 

@@ -506,7 +506,7 @@ impl Render {
         let raster_time = t0.elapsed().as_secs_f32();
         self.avg_raster_time = self.avg_raster_time * (1.0 - RASTER_TIME_EMA_ALPHA)
             + raster_time * RASTER_TIME_EMA_ALPHA;
-
+        let _ = self.pixels.render();
         drop(layers);
         queue.clear();
     }

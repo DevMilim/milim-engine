@@ -104,6 +104,9 @@ impl<S: Scene + 'static, P: GameObjectDispatch> ApplicationHandler for WinitApp<
                 }
             }
             WindowEvent::Resized(size) if size.width > 0 && size.height > 0 => {
+                if size.width == 0 || size.height == 0 {
+                    return;
+                }
                 if let Some(window) = &self.window {
                     if let Some(app) = &mut self.app {
                         let window_size = app.require_resource_mut::<WindowContext>();

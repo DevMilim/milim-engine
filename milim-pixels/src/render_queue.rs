@@ -140,8 +140,11 @@ impl RenderQueue {
             },
         );
     }
-    pub fn camera_mut(&mut self) -> &mut Vector2 {
-        &mut self.camera
+    pub fn camera(&mut self) -> Vector2 {
+        self.camera
+    }
+    pub fn set_camera(&mut self, position: Vector2) {
+        self.camera = position;
     }
     pub fn draw_text(
         &mut self,
