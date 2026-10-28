@@ -1,4 +1,7 @@
-use std::path::Path;
+use std::{
+    io::{self, Error},
+    path::Path,
+};
 
 use engine_core::{
     core::Handler,
@@ -62,29 +65,34 @@ pub struct ImageAsset {
     pub pixels: Vec<u8>,
 }
 impl ImageAsset {
-    pub fn load_from_file(path: &str) -> Self {
-        let img = image::open(Path::new(path)).expect("Falha ao carregar textura");
-        let rgba = img.into_rgba8();
+    pub fn load_from_file(path: &str) -> io::Result<Self> {
+        if let Ok(img) = image::open(Path::new(path)) {
+            let rgba = img.into_rgba8();
 
-        let dimensions = rgba.dimensions();
-
-        Self {
-            width: dimensions.0,
-            height: dimensions.1,
-            pixels: rgba.into_raw(),
+            let dimensions = rgba.dimensions();
+            Ok(Self {
+                width: dimensions.0,
+                height: dimensions.1,
+                pixels: rgba.into_raw(),
+            })
+        } else {
+            Err(Error::other("Load image error"))
         }
     }
-    pub fn load_from_file_and_resize(path: &str, width: u32, height: u32) -> Self {
-        let img = image::open(Path::new(path)).expect("Falha ao carregar textura");
-        let resize = img.resize(width, height, FilterType::Nearest);
-        let rgba = resize.into_rgba8();
+    pub fn load_from_file_and_resize(path: &str, width: u32, height: u32) -> io::Result<Self> {
+        if let Ok(img) = image::open(Path::new(path)) {
+            let resize = img.resize(width, height, FilterType::Nearest);
+            let rgba = resize.into_rgba8();
 
-        let dimensions = rgba.dimensions();
+            let dimensions = rgba.dimensions();
 
-        Self {
-            width: dimensions.0,
-            height: dimensions.1,
-            pixels: rgba.into_raw(),
+            Ok(Self {
+                width: dimensions.0,
+                height: dimensions.1,
+                pixels: rgba.into_raw(),
+            })
+        } else {
+            Err(Error::other("Load image error"))
         }
     }
 
