@@ -78,6 +78,7 @@ pub trait GameObjectBase {
     fn position(&self) -> Vector2 {
         self.base().transform.position
     }
+
     fn rotation(&self) -> f32 {
         self.base().transform.rotation
     }

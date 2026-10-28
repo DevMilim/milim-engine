@@ -38,13 +38,13 @@ impl Plugin for InputPlugin {
 }
 
 pub struct Input {
-    pub pressed_input: HashSet<InputType>,
-    pub just_pressed_input: HashMap<InputType, (u64, u64)>,
-    pub mouse_position: Vector2,
-    pub map: InputMap,
-    pub current_update_frame: u64,
-    pub current_fixed_frame: u64,
-    pub is_fixed_update: bool,
+    pub(crate) pressed_input: HashSet<InputType>,
+    just_pressed_input: HashMap<InputType, (u64, u64)>,
+    mouse_position: Vector2,
+    map: InputMap,
+    current_update_frame: u64,
+    current_fixed_frame: u64,
+    is_fixed_update: bool,
 }
 
 impl Input {
