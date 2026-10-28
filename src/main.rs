@@ -19,7 +19,7 @@ impl Main {
 impl GameObject for Main {
     fn draw(&mut self, ctx: &mut impl EngineApi, _blending: f32) {
         let render = ctx.require_resource_mut::<RenderQueue>();
-        render.draw_rect(Rect::new(400, 300, 50, 50), Color::BLACK, Anchor::Center, 0);
+        render.draw_rect(Rect::new(50, 50, 50, 50), Color::BLACK, Anchor::Center, 0);
     }
 }
 
