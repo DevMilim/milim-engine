@@ -150,7 +150,7 @@ pub struct WinitRunner {
 }
 impl Runner for WinitRunner {
     type Err = ();
-    fn run<S, P>(self, mut app: App<S, P>) -> Result<(), ()>
+    fn run<S, P>(self, app: App<S, P>) -> Result<(), ()>
     where
         S: Scene + 'static,
         P: GameObjectDispatch,

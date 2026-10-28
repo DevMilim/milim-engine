@@ -1,5 +1,5 @@
 use milim_engine::prelude::*;
-use milim_wgpu::WgpuPlugin;
+use milim_pixels::{PixelsPlugin, RenderQueue};
 use milim_winit::{input::InputPlugin, runner::WinitRunner};
 
 #[derive(GameObject)]
@@ -17,7 +17,10 @@ impl Main {
 }
 
 impl GameObject for Main {
-    fn draw(&mut self, _ctx: &mut impl EngineApi, _blending: f32) {}
+    fn draw(&mut self, ctx: &mut impl EngineApi, _blending: f32) {
+        let render = ctx.require_resource_mut::<RenderQueue>();
+        render.draw_rect(Rect::new(400, 300, 50, 50), Color::BLACK, Anchor::Center, 0);
+    }
 }
 
 #[derive(Scene)]
@@ -26,7 +29,7 @@ pub enum MainScene {
 }
 fn main() {
     let mut app = App::<MainScene>::new(Main::new().into());
-    app.add_plugin(WgpuPlugin::default())
+    app.add_plugin(PixelsPlugin::default())
         .add_plugin(InputPlugin);
     let _ = app.run(WinitRunner::default());
 }

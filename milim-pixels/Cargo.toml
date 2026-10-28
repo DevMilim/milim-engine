@@ -1,0 +1,13 @@
+[package]
+name = "milim-pixels"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+engine-core = { version = "0.1.0", path = "../engine-core" }
+fontdue = "0.9.5"
+image = "0.25.10"
+milim-winit = { version = "0.1.0", path = "../milim-winit" }
+pixels = "0.17.2"
+rayon = "1.12.0"
+rustc-hash = "2.1.3"
