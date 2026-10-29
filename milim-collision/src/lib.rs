@@ -1,13 +1,24 @@
 mod aabb;
+mod components;
 mod layer;
 mod plugin;
 
+use std::any::Any;
+
 pub use aabb::*;
+pub use components::*;
 pub use layer::*;
 pub use plugin::*;
 
 use engine_core::{math::Vector2, object::Id};
 use rustc_hash::FxHashMap;
+
+type EventFactory = Box<dyn Fn() -> Box<dyn Any + Send + 'static>>;
+
+pub struct TriggerCallbacks {
+    on_enter: Option<EventFactory>,
+    on_exit: Option<EventFactory>,
+}
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CollisionFlag {
@@ -80,6 +91,8 @@ pub struct CollisionWorld {
 
     entered_scratch: Vec<(ColliderKey, ColliderKey)>,
     exited_scratch: Vec<(ColliderKey, ColliderKey)>,
+
+    triggers: FxHashMap<ColliderKey, TriggerCallbacks>,
 
     grid_dirty: bool,
 }
@@ -689,6 +702,55 @@ impl CollisionWorld {
 
         hits.sort_unstable_by(|a, b| a.distance.total_cmp(&b.distance));
         hits
+    }
+
+    pub fn snap_and_move(&mut self, my_id: Id, snap_length: i32) -> Option<i32> {
+        let snap = self.snap_to_floor(my_id, snap_length)?;
+        self.translate_my_colliders(my_id, Vector2::new(0.0, snap as f32));
+        Some(snap)
+    }
+    pub fn register_triggers(
+        &mut self,
+        key: ColliderKey,
+        on_enter: Option<EventFactory>,
+        on_exit: Option<EventFactory>,
+    ) {
+        self.triggers
+            .insert(key, TriggerCallbacks { on_enter, on_exit });
+    }
+    pub fn unregister_triggers(&mut self, key: ColliderKey) {
+        self.triggers.remove(&key);
+    }
+
+    pub(crate) fn collect_trigger_events(&mut self, out: &mut Vec<(Id, Box<dyn Any + Send>)>) {
+        if self.triggers.is_empty() {
+            return;
+        }
+        let mut buf = std::mem::take(&mut self.entered_scratch);
+
+        Self::diff_pairs_into(&self.current_overlaps, &self.last_overlaps, &mut buf);
+        for &(a, b) in &buf {
+            self.fire(a, true, out);
+            self.fire(b, true, out);
+        }
+
+        Self::diff_pairs_into(&self.last_overlaps, &self.current_overlaps, &mut buf);
+        for &(a, b) in &buf {
+            self.fire(a, false, out);
+            self.fire(b, false, out);
+        }
+
+        self.entered_scratch = buf;
+    }
+
+    fn fire(&self, key: ColliderKey, enter: bool, out: &mut Vec<(Id, Box<dyn Any + Send>)>) {
+        let Some(cb) = self.triggers.get(&key) else {
+            return;
+        };
+        let factory = if enter { &cb.on_enter } else { &cb.on_exit };
+        if let Some(f) = factory {
+            out.push((key.id, f()));
+        }
     }
 }
 pub struct RaycastHit {

@@ -52,6 +52,6 @@ fn main() {
     let mut app = App::<MainScene>::new(Main::new().into());
     app.add_plugin(PixelsPlugin::default())
         .add_plugin(InputPlugin)
-        .add_plugin(CollisionPlugin);
+        .add_plugin(CollisionPlugin::default());
     let _ = app.run(WinitRunner::default());
 }
