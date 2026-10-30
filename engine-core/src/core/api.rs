@@ -26,7 +26,9 @@ pub trait CoreApi {
 
 pub trait WorldApi {
     fn spawn<T: GameObject + Send + 'static>(&mut self, obj: T);
+    #[doc(hidden)]
     fn start_object(&mut self, id: Id);
+    #[doc(hidden)]
     fn destroy_object(&mut self, id: Id);
 }
 
@@ -34,17 +36,21 @@ pub trait EventApi {
     fn send<T: Send + 'static>(&mut self, id: Id, message: T);
     fn send_boxed_any(&mut self, id: Id, message: Box<dyn Any + Send + 'static>);
     fn emit<T: Send + Sync + 'static>(&mut self, event: T);
-    fn emit_targeted<T: Send + 'static>(&mut self, id: Id, event: T);
     fn send_service<T: 'static, E: Send + 'static>(&mut self, event: E);
     fn take_mailbox(&mut self, id: Id) -> Option<Vec<GlobalEvent>>;
+    #[doc(hidden)]
     fn register_subscriptions(&mut self, id: Id, types: &[TypeId]);
+    #[doc(hidden)]
     fn unregister_subscriptions(&mut self, id: Id, types: &[TypeId]);
+    #[doc(hidden)]
     fn register_connect(&mut self, id: Id);
+    #[doc(hidden)]
     fn poll_broadcasts(
         &mut self,
         id: Id,
         type_id: TypeId,
     ) -> Vec<Arc<dyn Any + Send + Sync + 'static>>;
+    #[doc(hidden)]
     fn recycle_broadcast_buffer(&mut self, buf: Vec<Arc<dyn Any + Send + Sync + 'static>>);
 }
 pub trait SceneApi {

@@ -87,20 +87,12 @@ impl<'a> CoreApi for Context<'a> {
     }
 }
 impl<'a> EventApi for Context<'a> {
-    /// Utilizado para enviar uma mensagem endereçada para um GameObject especifico
-    /// A mensagem tem que ser do mesmo tipo que o definido em type Message = T;
     fn send<T: Send + 'static>(&mut self, id: Id, message: T) {
         let event = GlobalEvent::Targeted(id, Box::new(message));
         self.event.insert_global_event(event);
     }
-    /// Utilizado para emitir um evento global que sera recebido por todos os GameObjects que definiram um #[game(subscribe(metodo: Tipo))]
     fn emit<T: Send + Sync + 'static>(&mut self, event: T) {
         self.event.insert_broadcast_event(Arc::new(event));
-    }
-    /// Envia um evento similar a mensagem mas que pode ser de qualquer tipo, geralmente utilizado para comunicação de Componente para GameObject
-    fn emit_targeted<T: Send + 'static>(&mut self, id: Id, event: T) {
-        let event = GlobalEvent::Targeted(id, Box::new(event));
-        self.event.insert_global_event(event);
     }
 
     fn send_boxed_any(&mut self, id: Id, message: Box<dyn Any + Send + 'static>) {
