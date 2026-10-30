@@ -1,6 +1,5 @@
 use milim_collision::CollisionPlugin;
 use milim_engine::prelude::*;
-use milim_pixels::{PixelsPlugin, RenderQueue};
 use milim_winit::{
     input::{Input, InputPlugin, KeyCode},
     runner::WinitRunner,
@@ -21,6 +20,7 @@ impl Main {
 }
 
 impl GameObject for Main {
+    fn update(&mut self, _ctx: &mut impl EngineApi, _delta: f32) {}
     fn fixed_update(&mut self, ctx: &mut impl EngineApi, delta: f32) {
         let input = ctx.require_resource_mut::<Input>();
 
@@ -29,14 +29,12 @@ impl GameObject for Main {
         let direction =
             input.get_key_vector(KeyCode::KeyW, KeyCode::KeyS, KeyCode::KeyA, KeyCode::KeyD);
         self.base.transform.position += direction * speed * delta;
-
-        println!("Position: {:#?}", self.position());
     }
     fn draw(&mut self, ctx: &mut impl EngineApi, _blending: f32) {
         let render = ctx.require_resource_mut::<RenderQueue>();
         let position = self.global_position();
         render.draw_rect(
-            Rect::new(position.x as i32, position.y as i32, 50, 50),
+            Rect::new(position.x as i32, position.y as i32, 20, 20),
             Color::BLACK,
             Anchor::Center,
             0,
