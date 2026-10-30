@@ -53,5 +53,5 @@ fn main() {
     app.add_plugin(PixelsPlugin::default())
         .add_plugin(InputPlugin)
         .add_plugin(CollisionPlugin::default());
-    let _ = app.run(WinitRunner::default());
+    let _ = app.run(WinitRunner { frame_limit: None });
 }
