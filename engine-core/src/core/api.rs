@@ -37,6 +37,7 @@ pub trait EventApi {
     fn send_boxed_any(&mut self, id: Id, message: Box<dyn Any + Send + 'static>);
     fn emit<T: Send + Sync + 'static>(&mut self, event: T);
     fn send_service<T: 'static, E: Send + 'static>(&mut self, event: E);
+    #[doc(hidden)]
     fn take_mailbox(&mut self, id: Id) -> Option<Vec<GlobalEvent>>;
     #[doc(hidden)]
     fn register_subscriptions(&mut self, id: Id, types: &[TypeId]);
