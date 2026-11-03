@@ -183,30 +183,6 @@ impl Rasterizer {
             return;
         }
 
-        if rotation.abs() >= 0.001 {
-            Self::blit_rotated(
-                pixels,
-                pixels_width,
-                row_offset,
-                clip_y0,
-                clip_y1,
-                tex_pixels,
-                tex_width,
-                src_x,
-                src_y,
-                sprite_w,
-                sprite_h,
-                anchor,
-                position,
-                cam_x,
-                cam_y,
-                rotation,
-                flip_h,
-                flip_v,
-            );
-            return;
-        }
-
         for dst_y in screen_min_y..screen_max_y {
             let base_tex_y = (dst_y as isize - start_y) as usize;
             let tex_y = if flip_v {
